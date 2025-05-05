@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: ev-simulation
+Version: 0.0.1
+Summary: Simulation de la charge des véhicules électriques
+Requires-Python: >=3.13
