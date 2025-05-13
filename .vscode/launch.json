@@ -1,0 +1,19 @@
+
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Streamlit",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "streamlit",          // <‑‑ run as “python ‑m streamlit”
+      "args": [
+        "run",
+        "${workspaceFolder}/src/gui/app.py",   // path to your Streamlit script
+        "--server.headless=false"
+      ],
+      "console": "integratedTerminal",
+    }
+  ]
+}
