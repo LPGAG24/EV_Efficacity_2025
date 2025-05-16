@@ -103,7 +103,17 @@ class CarEfficiency:
 
 
 
-
-
-
+class ChargerInfo:
+    def __init__(self, data: pd.DataFrame):
+        self.chargers = pd.DataFrame()
+        self.chargers["Charger watts"] = {
+            "Level 1" : 120*[12, 14, 16],
+            "Level 2 (208)":208*[15,48,80],
+            "Level 2 (240)":240*[15,48,80],
+            "Level 3 (DC)": 480*[50, 100, 150],}
     
+    def get_charger(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame of charger information.
+        """
+        return self.chargers
