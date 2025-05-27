@@ -126,8 +126,8 @@ def fetch_statcan_fleet(table_id: str = "23-10-0308-01") -> pd.DataFrame:
 
 # ─── Main entrypoint ───────────────────────────────────────────────────────
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or sys.argv[1] not in ("ckan", "statcan"):
-        print("Usage: python data_prep.py [ckan|statcan]")
+    if len(sys.argv) < 2 or sys.argv[1] not in ("ckan", "statcan", "nrcan"):
+        print("Usage: python data_prep.py [ckan|statcan|nrcan]")
         sys.exit(1)
 
     mode = sys.argv[1]
@@ -146,3 +146,4 @@ if __name__ == "__main__":
         # Example: pivot active light-duty fleet by province for latest year
         pivot = fetch_statcan_fleet("23-10-0308-01")
         print(pivot)
+        

@@ -1,28 +1,42 @@
 import pandas as pd
 
+
+
+"""CarDistribution class for analyzing vehicle efficiency data.
+
+Calculates
+Usage:
+    - get the car efficiency by type
+    - get the car efficiency by province
+    - get the car efficiency by fuel type
+    - get the car efficiency by year
+    - get the car efficiency by make
+    - get the car efficiency by model
+    - get the car efficiency by trim
+    - get the car efficiency by vehicle class
+
+"""
 class CarDistribution:
-    # -------------------
-    # 1) Initialization
-    # -------------------
     def __init__(self, data: pd.DataFrame, Province: str = "Canada") -> None:
-        self.initData = data
+        self.initData: pd.DataFrame = data
         self.data = pd.DataFrame.copy(data)
         self.Province: str = Province
-        self.nb_of_vehicles = {}
-        self.fuel_type = {}
-        self.fuel_type_percent = {}
-        self.fuel_type_percent_by_vehicle = {}
+        self.nb_of_vehicles: dict[str, int] = {}
+        self.fuel_type: dict[str, int] = {}
+        self.fuel_type_percent: dict[str, float] = {}
+        self.fuel_type_percent_by_vehicle: dict[str, float] = {}
         self.remove_unwanted_rows()
         self.rename_CanStat_type()
         self.check_full_car_numbers()
         self.set_fuel_type_percent()
         self.set_fuel_type_percent_by_vehicle()
 
+
     def __repr__(self) -> str:
         return f"CarDistribution(Province={self.Province}, data_shape={self.data.shape})"
 
 
-    def __getitem__(self, key):
+    def __getitem__(self, key) -> pd.DataFrame:
         """
         Flexible selector.
 
@@ -77,9 +91,7 @@ class CarDistribution:
             "Key must be str, list, slice, tuple, dict, or callable."
         )
 
-    # -------------------
-    # 2) Data Cleaning
-    # -------------------
+
     def remove_unwanted_rows(self) -> None:
         """
         Keeps only the target province’s non-total rows with 'All fuel types'.
@@ -90,6 +102,7 @@ class CarDistribution:
             & (df["Fuel Type"] == "All fuel types")
         ]
         self.data = df
+
 
     def rename_CanStat_type(self) -> None:
         """
@@ -115,6 +128,7 @@ class CarDistribution:
             df["Vehicle Type"]
         )
 
+
     def check_full_car_numbers(self) -> None:
         """
         Checks if sum of vehicles in the province exceeds the max across entire data.
@@ -125,9 +139,7 @@ class CarDistribution:
         ):
             raise ValueError("Count is greater than total number of vehicles")
 
-    # -------------------
-    # 3) Fuel Type Stats
-    # -------------------
+
     def set_fuel_type_percent(self, Province: str = "Canada") -> None:
         """
         Computes and stores the percent share of each fuel type in the total fleet.
@@ -156,6 +168,7 @@ class CarDistribution:
             self.fuel_type_percent, orient="index", columns=["Percent"]
         )
 
+
     def set_fuel_type_percent_by_vehicle(self) -> None:
         """
         Computes per-vehicle-type shares and stores in 'fuel_type_percent_by_vehicle'.
@@ -174,6 +187,7 @@ class CarDistribution:
             totals_by_type.set_index("Vehicle Type").to_dict()["Pct of total"]
         )
 
+
     def get_fuel_type_percent_by_vehicle(self) -> pd.DataFrame:
         """
         Returns per-vehicle-type percentage of the fleet as a DataFrame.
@@ -182,9 +196,31 @@ class CarDistribution:
             self.fuel_type_percent_by_vehicle, orient="index", columns=["Percent"]
         )
 
+
     def switch_province(self, Province: str):
         self.Province = Province
         self.set_fuel_type_percent()
         self.set_fuel_type_percent_by_vehicle()
 
 
+if __name__ == "__main__":
+    # Example usage
+    import matplotlib.pyplot as plt
+    # Sample data for demonstration
+    import pandas as pd
+    import data_prep_canada
+
+    car_dist = CarDistribution(data_prep_canada.fetch_statcan_fleet())
+    print(car_dist.get_fuel_type())
+    print(car_dist.get_fuel_type_percent_by_vehicle())
+
+    # Plotting the fuel type distribution
+    plt.bar(car_dist.get_fuel_type().index, car_dist.get_fuel_type()["Percent"])
+    plt.xlabel("Fuel Type")
+    plt.ylabel("Percentage")
+    plt.title("Fuel Type Distribution")
+    plt.xticks(rotation=45)
+    plt.show()
+    print(car_dist["Ontario"])
+    print(car_dist[("Ontario", "Subcompact")])
+    print(car_dist[{"Province": "Canada"}])

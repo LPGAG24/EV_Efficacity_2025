@@ -1,5 +1,23 @@
 import pandas as pd
 
+
+"""
+CarEfficiency class
+class for:
+   - get the car efficiency
+
+Usage:
+   - get the car efficiency by type
+   - get the car efficiency by province
+   - get the car efficiency by fuel type
+   - get the car efficiency by year
+   - get the car efficiency by make
+   - get the car efficiency by model
+   - get the car efficiency by trim
+   - get the car efficiency by vehicle class
+"""
+
+
 #VEHICULE_CLASS = {['Subcompact', 'Mid-size', 'Compact', 'Two-seater', 'Full-size',
 #       'Station wagon: Small', 'Sport utility vehicle: Standard',
 #       'Sport utility vehicle: Small', 'Pickup truck: Standard',
@@ -7,12 +25,11 @@ import pandas as pd
 
 class CarEfficiency:
     def __init__(self, data: pd.DataFrame):
-
-        self.data = data
-        self.vehicleClass = self.data["Vehicle class"].unique()
-        self.fuel_consumption = {}
-        self.distance = {}
-        self.efficiency_percent_by_vehicle_type = {}
+        self.data: pd.DataFrame = data
+        self.vehicleClass: pd.Series = self.data["Vehicle class"].unique()
+        self.fuel_consumption: dict[str, float] = {}
+        self.distance: dict[str, float] = {}
+        self.efficiency_percent_by_vehicle_type: dict[str, float] = {}
         self.set_efficiency_by_type()
  
 
@@ -100,6 +117,7 @@ class CarEfficiency:
         """
         df = self.efficiency_by_vehicle_type
         return df[df["Vehicle class"] == category] if category is not None else df
+    
 
 
 
@@ -117,3 +135,26 @@ class ChargerInfo:
         Returns a DataFrame of charger information.
         """
         return self.chargers
+    
+
+if __name__ == "__main__":
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    # Example usage
+    data = pd.DataFrame({
+        "Vehicle class": ["Compact: X", "Compact: Y", "Subcompact: Z"],
+        "Combined (Le/100 km)": ["5.6 (20.2 kWh/100 km)", "5.4 (19.5 kWh/100 km)", "4.8 (17.3 kWh/100 km)"]
+    })
+    
+    car_efficiency = CarEfficiency(data)
+    print(car_efficiency.get_efficiency_by_type())
+    print(car_efficiency.get_efficiency_by_type("Compact"))
+
+    # Plotting the efficiency by vehicle type
+    plt.bar(car_efficiency.efficiency_by_vehicle_type["Vehicle class"],
+            car_efficiency.efficiency_by_vehicle_type["Combined (Le/100 km)"])
+    plt.xlabel("Vehicle Class")
+    plt.ylabel("Combined (Le/100 km)")
+    plt.title("Efficiency by Vehicle Type")
+    plt.xticks(rotation=45)
+    plt.show()

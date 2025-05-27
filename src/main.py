@@ -19,4 +19,8 @@ def main():
     print("Hybrid vehicle efficiency by type:")
     print(hybridEfficiency.get_efficiency_by_type())
 
+
+    """Section 3: Car usage, get an idea of the car usage in Canada and in each provinces"""
+    
+
 main()
