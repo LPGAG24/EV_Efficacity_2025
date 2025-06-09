@@ -24,6 +24,8 @@ Usage:
 #       'Minicompact', 'Station wagon: Mid-size', 'Minivan']}
 
 class CarEfficiency:
+    _SNOW_COEFF = 2  # Coefficient for snow conditions (2x consumption)
+
     def __init__(self, data: pd.DataFrame):
         self.data: pd.DataFrame = data
         self.vehicleClass: pd.Series = self.data["Vehicle class"].unique()
@@ -117,7 +119,70 @@ class CarEfficiency:
         """
         df = self.efficiency_by_vehicle_type
         return df[df["Vehicle class"] == category] if category is not None else df
-    
+
+    def get_mean_efficiency(self, category: str | list[str] | None = None) -> float | pd.Series:
+        """Must be able to return efficiency as a float or pandas Series. like
+
+        >>> car_efficiency = CarEfficiency(data)
+        >>> car_efficiency.get_mean_efficiency()
+        Returns the mean efficiency of all vehicles in the dataset.
+        
+        >>> car_efficiency = CarEfficiency(data)
+        >>> car_efficiency.get_mean_efficiency(["Compact", "Subcompact"])
+        Returns the mean efficiency of specified vehicle classes. -> [0.56, 0.48]
+
+        """
+        category = None if isinstance(category, str) else category
+        df = self.efficiency_by_vehicle_type
+        return df[df["Vehicle class"].isin(category)].mean() if category else df.mean()
+
+    def __call__(self) -> pd.DataFrame:
+        return self.data
+
+    def __getitem__(self, key) -> pd.DataFrame:
+        """
+        Flexible selector for the efficiency table.
+
+        Accepted keys
+        -------------
+        • 'Kia'                                 → rows for one make
+        • ['Kia','Hyundai'] or slice(...)       → several makes
+        • ('Kia', 'EV6')                        → make + model
+        • ('Kia', 'EV6', 2023)                  → make + model + year
+        • ('Kia', 'EV6', 2023, 'BEV')           → + fuel type
+        • {'Make':'Kia', 'Model year':2023}     → arbitrary column=value filter
+        • callable                              → lambda df: ... (power-user hook)
+        """
+        df = self.data          # master DataFrame stored in __init__
+
+        # 1 ── single make  -------------------------------------------------
+        if isinstance(key, str):
+            return df[df["Make"] == key]
+
+        # 2 ── several makes (list/tuple/slice) -----------------------------
+        if isinstance(key, (list, tuple, slice)):
+            return df[df["Make"].isin(df["Make"].unique()[key])]
+
+        # 3 ── hierarchical tuple (Make, Model, Year, Fuel) -----------------
+        if isinstance(key, tuple):
+            cols = ["Make", "Model", "Model year", "Fuel Type"]  # adjust if needed
+            mask = pd.Series(True, index=df.index)
+            for col, val in zip(cols, key):
+                mask &= df[col] == val
+            return df[mask]
+
+        # 4 ── free-form dict {column: value, ...} --------------------------
+        if isinstance(key, dict):
+            mask = pd.Series(True, index=df.index)
+            for col, val in key.items():
+                mask &= df[col] == val
+            return df[mask]
+
+        # 5 ── callable hook  (lambda df: ...) ------------------------------
+        if callable(key):
+            return key(df)
+
+        raise TypeError("Key must be str, list/tuple/slice, dict, or callable.")
 
 
 
@@ -136,6 +201,30 @@ class ChargerInfo:
         """
         return self.chargers
     
+    def get_charging_time(self, vehicle_class: str, battery_capacity_kwh: float) -> pd.DataFrame:
+        """
+        Calculate the charging time for a given vehicle class and battery capacity.
+        
+        Args:
+            vehicle_class (str): The class of the vehicle (e.g., "Level 1", "Level 2 (208)", etc.).
+            battery_capacity_kwh (float): The battery capacity in kWh.
+        
+        Returns:
+            pd.DataFrame: A DataFrame with charging times for each charger type.
+        """
+        if vehicle_class not in self.chargers["Charger watts"].index:
+            raise ValueError(f"Unknown charger type: {vehicle_class}")
+        
+        charger_watts = self.chargers.loc[vehicle_class, "Charger watts"]
+        charging_times = battery_capacity_kwh * 1000 / charger_watts
+
+        charging_times = charging_times.round(2)  # Round to 2 decimal places
+        charging_times = charging_times.astype(float)
+
+        return pd.DataFrame({
+            "Charger Type": self.chargers.index,
+            "Charging Time (hours)": charging_times
+        })
 
 if __name__ == "__main__":
     import pandas as pd

@@ -1,7 +1,4 @@
 import pandas as pd
-
-
-
 """CarDistribution class for analyzing vehicle efficiency data.
 
 Calculates
@@ -34,7 +31,9 @@ class CarDistribution:
 
     def __repr__(self) -> str:
         return f"CarDistribution(Province={self.Province}, data_shape={self.data.shape})"
-
+    
+    def __call__(self) -> pd.DataFrame:
+        return self.data
 
     def __getitem__(self, key) -> pd.DataFrame:
         """
@@ -64,7 +63,7 @@ class CarDistribution:
         # 3. tuple  → hierarchical selector
         #    (e.g. ('Ontario', 'Subcompact'), ('Ontario', 'Subcompact', 'BEV'))
         if isinstance(key, tuple):
-            cols = ["Province", "Vehicle Type", "Fuel Type"]
+            cols = ["Province", "Vehicle Type", "Fuel Type",  "Vehicle Type"]
             mask = pd.Series(True, index=df.index)
             for lvl, value in zip(cols, key):
                 mask &= df[lvl] == value
@@ -123,10 +122,17 @@ class CarDistribution:
             "Buses": "Other",
             "Class 7 vehicles": "Other",
             "Class 8 vehicles": "Other",
+            "Other vehicles": "Other",         # plural StatsCan label
+            "Other": "Other"                   # safety, in case the plain word exists
         }
         self.data["Vehicle Type"] = df["Vehicle Type"].map(mapping).fillna(
             df["Vehicle Type"]
         )
+        
+        cols_key   = ["Province", "Vehicle Type", "Fuel Type"]
+        self.data  = (self.data
+              .groupby(cols_key, as_index=False)
+              .agg({"Vehicles nb": "sum"}))
 
 
     def check_full_car_numbers(self) -> None:

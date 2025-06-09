@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import re
 import math
+import util.normalizer as util
 
 class CarUsage:
     """CarUsage class for analyzing vehicle usage data.
@@ -105,50 +106,166 @@ class CarUsage:
         
 
         # ---------- MAIN --------------------------------------------
-        results = {}
-        for prov in PROVINCES:
-            df      = fetch_table(prov)
-            km_yr   = annual_km(df)
+        records = []                    # ← collect rows here  (list-of-dicts)
+
+        for prov in PROVINCES:          # e.g. ["qc", "on", …]
+            df          = fetch_table(prov)
+            km_yr       = annual_km(df)
             wkday_km, wkend_km = daily_split(km_yr)
-    
-            results[prov.upper()] = {
-                "year":         YEAR,
-                "annual_km":    km_yr,
-                "wkday_km":     wkday_km,
-                "wkend_km":     wkend_km,
-                "μ_wkday":      mu_from_mean(wkday_km),
-                "μ_wkend":      mu_from_mean(wkend_km),
-                "σ":            SIGMA_LN,
-            }
 
-        df = fetch_table("ca", yr=YEAR, URL=URL_CAN)
-        km_yr = annual_km(df)
+            records.append({            # each dict becomes one row
+                "Province":    prov.upper(),     # keep province as a COLUMN
+                "Year":        YEAR,
+                "Annual_km":   km_yr,
+                "Weekday_km":  wkday_km,
+                "Weekend_km":  wkend_km,
+                "Log_weekday": mu_from_mean(wkday_km),
+                "Log_weekend": mu_from_mean(wkend_km),
+                "Sigma_ln":    SIGMA_LN,
+            })
+
+        # ---------- Canada-wide line (optional) ----------
+        df_ca          = fetch_table("ca", yr=YEAR, URL=URL_CAN)
+        km_yr          = annual_km(df_ca)
         wkday_km, wkend_km = daily_split(km_yr)
-        # Add Canada-wide data
-        results["CA"] = {
-            "year":         YEAR,
-            "annual_km":    km_yr,
-            "wkday_km":     wkday_km,
-            "wkend_km":     wkend_km,
-            "μ_wkday":      mu_from_mean(wkday_km),
-            "μ_wkend":      mu_from_mean(wkend_km),
-            "σ":            SIGMA_LN,
-        }
 
+        records.append({
+            "Province":   "CA",
+            "Year":       YEAR,
+            "Annual_km":  km_yr,
+            "Weekday_km": wkday_km,
+            "Weekend_km": wkend_km,
+            "Log_weekday": mu_from_mean(wkday_km),
+            "Log_weekend": mu_from_mean(wkend_km),
+            "Sigma_ln":    SIGMA_LN,
+        })
+
+        # ---------- list-of-dicts → DataFrame ----------
+        self.data = pd.DataFrame.from_records(records)
+
+        self.data = util.normalize_dataframe(self.data)
+        
         print("Car usage data fetched and processed.")
         print("Average distance traveled per year (km):")
-        for prov, data in results.items():
-            print(f"  {prov}: {data['annual_km']}")
+        for prov in self.data["Province"]:
+            print(f"  {prov}: {self.data.loc[self.data['Province'] == prov, 'Annual_km'].values[0]}")
         print("Average distance traveled per weekday (km):")
-        for prov, data in results.items():
-            print(f"  {prov}: {data['wkday_km']}")
+        for prov in self.data["Province"]:
+            print(f"  {prov}: {self.data.loc[self.data['Province'] == prov, 'Weekday_km'].values[0]}")
         print("Average distance traveled per weekend (km):")
-        for prov, data in results.items():
-            print(f"  {prov}: {data['wkend_km']}")
+        for prov in self.data["Province"]:
+            print(f"  {prov}: {self.data.loc[self.data['Province'] == prov, 'Weekend_km'].values[0]}")
         print("Done")
+        
+        
+    def __getitem__(self, key) -> pd.DataFrame:
+        """
+        Flexible selector on province/year table.
+
+        Accepted keys
+        -------------
+        • "QC"                                   → all rows for Quebec
+        • ["QC","ON"] or slice(...)              → several provinces
+        • ("QC", 2022)                           → province + year
+        • {'Province':"QC", "Year":2022}         → arbitrary column=value filter
+        • callable                               → lambda df: ... (power-user hook)
+        """
+        df = self.data
+
+        # 1. single province (string)
+        if isinstance(key, str):
+            return df[df["Province"] == key]
+
+        # 2. several provinces (list/tuple/slice)
+        if isinstance(key, (list, slice)):
+            return df[df["Province"].isin(df["Province"].unique()[key])]
+
+        # 3. hierarchical tuple: (province, year)
+        if isinstance(key, tuple):
+            cols = ["Province", "Year"]
+            mask = pd.Series(True, index=df.index)
+            for col, val in zip(cols, key):
+                mask &= df[col] == val
+            return df[mask]
+
+        # 4. free-form dict {column: value, …}
+        if isinstance(key, dict):
+            mask = pd.Series(True, index=df.index)
+            for col, val in key.items():
+                mask &= df[col] == val
+            return df[mask]
+
+        # 5. callable
+        if callable(key): return key(df)
+
+        raise TypeError("Key must be str, list/slice, tuple, dict, or callable.")
+    
+    
+    def get_daily_driver_counts(self):
+        """
+        Fetches and attaches the DataFrame (Province, DayType, Drivers) as
+        self.daily_drivers. Use .loc[province, daytype] or filter as needed.
+        """
+        df = fetch_statcan_daily_drivers()
+        self.daily_drivers = df[df["Province"]=="Canada"]["Drivers"]
+        return self.daily_drivers
+
+
+
+from stats_can import StatsCan
+import pandas as pd
+
+def fetch_statcan_daily_drivers():
+    """
+    Fetches, for each province, the number of people who drove a car on a typical weekday/weekend day in 2022.
+    Returns a DataFrame: Province | DayType | Drivers
+    
+    Currently using Canada-wide participation rate and population data.
+    """
+    sc = StatsCan()
+    # --- 1. Participation rate table: 45-10-0104-03 ---
+    t_part = sc.table_to_df("45-10-0104-03")
+    # Filter for 'Private vehicle, driver' and 'Participation rate'
+    part = t_part[(t_part["Activity group"] == "Sleep and personal activities") &
+                  (t_part["Statistics"] == "Participation rate") &
+                  (t_part["Age group"] == "Total, 15 years and over") &
+                  (t_part["Gender"] == "Total, all persons")]
+    # We want: GEO, Type of day, VALUE (is %), REF_DATE (should be 2022)
+    part = part.rename(columns={"GEO": "Province", "VALUE": "PartRate"})
+    part = part[["Province", "PartRate"]]
+
+
+    # --- 2. Provincial populations from 17-10-0005-01 ---
+    t_pop = sc.table_to_df("17-10-0005-01")
+    # Filter for both sexes, all ages, 2022-07-01
+    t_pop["REF_DATE"] = pd.to_datetime(t_pop["REF_DATE"])
+    latest_date = t_pop["REF_DATE"].max()
+    pop = t_pop[
+        (t_pop["REF_DATE"] == latest_date) &
+        (t_pop["Gender"] == "Total - gender") &
+        (t_pop["Age group"] == "All ages")
+    ].rename(columns={"GEO": "Province", "VALUE": "Population"})
+    pop = pop[["Province", "Population"]]
+    pop = pop[pop["Province"] == "Canada"]
+    # --- 3. Merge and compute daily drivers ---
+    merged = part.merge(pop, on="Province", how="left")
+    merged["Drivers"] = (merged["Population"][0] * merged["PartRate"] / 100).round().astype(int)
+    merged = merged[["Province","Drivers"]]
+    return merged
+
 
 
 
 if __name__ == "__main__":
     car_usage = CarUsage()
     car_usage.fetchData()
+    daily_drivers = car_usage.get_daily_driver_counts()
+
+    # Print Quebec weekday and weekend
+    print("Quebec weekday drivers:", daily_drivers)
+    print("Quebec weekend drivers:", daily_drivers)
+
+    # Print for all provinces
+    print(car_usage.daily_drivers)
+
+    
