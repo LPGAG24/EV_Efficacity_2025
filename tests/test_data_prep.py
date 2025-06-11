@@ -1,23 +1,33 @@
-from pathlib import Path
+import os
+import sys
+import pandas as pd
 
-import pytest
-import pandas as pd 
-import src.carDistribution as cd
-import src.data_prep_canada as dp
-from src.carEfficiency import CarEfficiency
-from src.carDistribution import CarDistribution
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+
+from data_prep_canada import km_to_kwh
+from carDistribution import CarDistribution
+
 
 def test_km_to_kwh():
-    assert dp.km_to_kwh(100) == 18
+    assert km_to_kwh(100) == 18
+    assert km_to_kwh(50) == 9
 
-def test_car_distribution():
-    df = pd.DataFrame({
-        "Province": ["Canada", "Canada", "Canada"],
-        "Vehicle Type": ["Passenger cars", "Pickup trucks", "Sport utility vehicles"],
+
+def sample_distribution_df():
+    return pd.DataFrame({
+        "Province": ["Ontario", "Ontario", "Ontario"],
+        "Vehicle Type": [
+            "Total, road motor vehicle registrations",
+            "Subcompact",
+            "Pickup truck",
+        ],
         "Fuel Type": ["All fuel types", "All fuel types", "All fuel types"],
-        "Vehicles nb": [100, 200, 300]
+        "Vehicles nb": [100, 40, 60],
     })
 
-    cd = CarDistribution(df)
-    assert cd.get_fuel_type_percent() == 100
-    assert cd.get_fuel_type_percent_by_vehicle()
+
+def test_getitem_tuple():
+    dist = CarDistribution(sample_distribution_df(), Province="Ontario")
+    res = dist["Ontario", "Subcompact", "All fuel types"]
+    assert len(res) == 1
+    assert res.iloc[0]["Vehicles nb"] == 40
