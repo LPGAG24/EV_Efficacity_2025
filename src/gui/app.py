@@ -12,6 +12,14 @@ from carRecharge     import CarRecharge
 from carUsage        import CarUsage
 from data_prep_canada import fetch_statcan_fleet, download_ckan_resource
 
+
+def gaussian_profile(mu: float, sigma: float, n: int = 48) -> np.ndarray:
+    """Return a normalised 30‑min profile centred on ``mu`` hours."""
+    t = np.linspace(0, 24, n, endpoint=False)
+    prof = np.exp(-((t - mu) ** 2) / (2 * sigma * sigma))
+    prof[prof < 0] = 0
+    return prof / prof.sum()
+
 st.set_page_config(page_title="EV & Hybrid Dashboard", layout="wide")
 
 # ── GeoJSON helper ──────────────────────────────────────────────────────────
@@ -63,10 +71,26 @@ electric_eff = CarEfficiency(load_electric_efficiency())
 hybrid_eff   = CarEfficiency(load_hybrid_efficiency())
 
 
+# ── Vehicle selection ──────────────────────────────────────────────────────
+st.sidebar.header("Vehicle")
 selected_types = st.sidebar.multiselect(
-    "Vehicle class (efficiency)",
+    "Vehicle class",
     options=electric_eff.efficiency_by_vehicle_type["Vehicle class"].tolist(),
 )
+makes = sorted(electric_eff.data["Make"].unique())
+selected_make = st.sidebar.selectbox("Make", makes)
+models = sorted(
+    electric_eff.data[electric_eff.data["Make"] == selected_make]["Model"].unique()
+)
+selected_model = st.sidebar.selectbox("Model", models)
+
+model_row = electric_eff[{"Make": selected_make, "Model": selected_model}]
+if not model_row.empty:
+    eff = float(model_row["Combined (kWh/100 km)"].iloc[0])
+    selected_class = model_row["Vehicle class"].iloc[0]
+else:
+    eff = 18.0
+    selected_class = None
 
 # ── Layout ──────────────────────────────────────────────────────────────────
 st.title(f"🚗 EV & Hybrid Dashboard — {province}")
@@ -103,23 +127,31 @@ with st.container():
 day_choices = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 selected_day = st.sidebar.selectbox("Select Day of Week", day_choices)
 
-available_classes = dist.data["Vehicle Type"].unique()
-selected_class = st.sidebar.selectbox("Vehicle Class", available_classes)
-
 # --- Get number of vehicles of that class in province
-try:
-    car_count = dist[(province, selected_class)]["Vehicles nb"].sum()
-except Exception:
-    car_count = 0
-
-# --- Get efficiency for class (mean kWh/100km)
-eff_row = electric_eff.get_efficiency_by_type(selected_class)
-if not eff_row.empty:
-    # Use the right column depending on your data (might be 'Combined (kWh/100 km)')
-    eff_col = [c for c in eff_row.columns if "Combined (Le/100 km)" in c][0]
-    eff = eff_row[eff_col].values[0]
+if selected_class:
+    try:
+        total_vehicles = dist[(province, selected_class)]["Vehicles nb"].sum()
+    except Exception:
+        total_vehicles = 0
 else:
-    eff = 18  # fallback value
+    total_vehicles = 0
+
+ev_share = st.sidebar.number_input(
+    "EV share (%)",
+    min_value=0,
+    max_value=100,
+    value=10,
+    step=1,
+)
+default_count = int(total_vehicles * ev_share / 100)
+car_count = st.sidebar.number_input(
+    "Number of EVs",
+    min_value=0,
+    value=default_count,
+    step=1,
+)
+
+# 'eff' was already derived from selected model above
 
 # --- Get avg distance driven per day for that province (use CarUsage or fallback)
 try:
@@ -130,31 +162,91 @@ try:
 except Exception:
     avg_distance = 30
 
-# --- Charging profile for selected day (use CarRecharge or fallback)
-usage_data = pd.DataFrame({"Day": [selected_day]*24, "Distance_km": [avg_distance]*24})
-cr = CarRecharge(usage_data)
-# Use some default profile or let user pick profile
-cr.set_car_charging_prop(peaks=[(8, 0.25), (12, 0.25), (18, 0.5)], base=0.02)
-profile_df = cr.get_charging_profile_df()
-profile = profile_df[profile_df["Day"] == selected_day]["ChargingPerc"].values
+# --- Custom charging profiles -----------------------------------------------
+st.sidebar.header("Charging profiles")
+home_mu = st.sidebar.number_input(
+    "Home peak hour",
+    min_value=0.0,
+    max_value=23.5,
+    value=18.0,
+    step=0.5,
+)
+home_sigma = st.sidebar.number_input(
+    "Home σ",
+    min_value=0.5,
+    max_value=5.0,
+    value=2.0,
+    step=0.5,
+)
+work_mu = st.sidebar.number_input(
+    "Work peak hour",
+    min_value=0.0,
+    max_value=23.5,
+    value=9.0,
+    step=0.5,
+)
+work_sigma = st.sidebar.number_input(
+    "Work σ",
+    min_value=0.5,
+    max_value=5.0,
+    value=2.0,
+    step=0.5,
+)
 
-# --- Interpolate hourly profile to 30-min intervals
-profile_30min = np.repeat(profile, 2)
-time_bins = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0,30)]
+home_speed = st.sidebar.number_input("Home charger speed (kW)", value=7.2)
+work_speed = st.sidebar.number_input("Work charger speed (kW)", value=11.0)
 
-# --- Compute total energy required per 30 min
-total_daily_energy = car_count * eff * avg_distance / 100  # in kWh
-# The sum of profile_30min should be 1 (if profile was normalized)
-energy_per_bin = profile_30min * total_daily_energy
+home_only = st.sidebar.checkbox("Home only", value=False)
+work_only = st.sidebar.checkbox("Work only", value=False)
+if home_only:
+    home_share = 1.0
+elif work_only:
+    home_share = 0.0
+else:
+    home_share = st.sidebar.number_input(
+        "Home charging %",
+        min_value=0,
+        max_value=100,
+        value=70,
+        step=1,
+    ) / 100
 
-# --- Plot
-energy_df = pd.DataFrame({"Time": time_bins, "Energy_kWh": energy_per_bin})
-chart = alt.Chart(energy_df).mark_bar().encode(
-    x=alt.X('Time', sort=None, title='Time of Day'),
-    y=alt.Y('Energy_kWh', title='Energy required (kWh)'),
-    tooltip=['Time', 'Energy_kWh']
+work_share = 1.0 - home_share
+
+home_profile = gaussian_profile(home_mu, home_sigma)
+work_profile = gaussian_profile(work_mu, work_sigma)
+
+def profile_chart(prof, title):
+    df = pd.DataFrame({
+        "Time": [f"{i//2:02d}:{'30' if i%2 else '00'}" for i in range(48)],
+        "Prob": prof
+    })
+    return alt.Chart(df).mark_bar().encode(x='Time', y='Prob').properties(title=title, width=700, height=250)
+
+st.altair_chart(profile_chart(home_profile, "Home arrival distribution"))
+st.altair_chart(profile_chart(work_profile, "Work arrival distribution"))
+
+# --- Compute energy per 30-min slot -----------------------------------------
+energy_per_car = avg_distance * eff / 100
+time_bins = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 30)]
+
+home_energy = home_share * car_count * energy_per_car * home_profile
+work_energy = work_share * car_count * energy_per_car * work_profile
+
+energy_df = pd.DataFrame({
+    "Time": time_bins,
+    "Home_kWh": home_energy,
+    "Work_kWh": work_energy
+})
+energy_df["Total_kWh"] = energy_df["Home_kWh"] + energy_df["Work_kWh"]
+
+energy_long = energy_df.melt(id_vars="Time", value_vars=["Home_kWh", "Work_kWh"], var_name="Source", value_name="kWh")
+chart = alt.Chart(energy_long).mark_area(opacity=0.7).encode(
+    x=alt.X('Time', sort=None),
+    y=alt.Y('kWh', stack=None),
+    color='Source'
 ).properties(
-    title=f"Total Charging Demand by 30-min Slot ({province}, {selected_class}, {selected_day})",
+    title=f"Daily Charging Demand ({province}, {selected_model})",
     width=900,
     height=350
 )
