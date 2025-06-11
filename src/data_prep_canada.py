@@ -30,6 +30,23 @@ CKAN_HYBR_ID = "8812228b-a6aa-4303-b3d0-66489225120d"
 # ─── CKAN settings ─────────────────────────────────────────────────────────
 CKAN_BASE = "https://open.canada.ca/data/en/api/3/action"
 
+def km_to_kwh(distance_km: float, efficiency_kwh_per_100km: float = 18.0) -> float:
+    """Convert travelled kilometres to required kWh.
+
+    Parameters
+    ----------
+    distance_km : float
+        Distance in kilometres.
+    efficiency_kwh_per_100km : float, default 18.0
+        Energy consumed per 100 km.
+
+    Returns
+    -------
+    float
+        Energy in kilowatt‑hours required to travel ``distance_km``.
+    """
+    return distance_km * efficiency_kwh_per_100km / 100.0
+
 def _slugify(d: dict[str, str] | None) -> str:
     """Turn {'Make':'Tesla'} → '__Make-Tesla' (safe for filenames)."""
     if not d:

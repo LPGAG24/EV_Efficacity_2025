@@ -63,7 +63,7 @@ class CarDistribution:
         # 3. tuple  → hierarchical selector
         #    (e.g. ('Ontario', 'Subcompact'), ('Ontario', 'Subcompact', 'BEV'))
         if isinstance(key, tuple):
-            cols = ["Province", "Vehicle Type", "Fuel Type",  "Vehicle Type"]
+            cols = ["Province", "Vehicle Type", "Fuel Type"]
             mask = pd.Series(True, index=df.index)
             for lvl, value in zip(cols, key):
                 mask &= df[lvl] == value
