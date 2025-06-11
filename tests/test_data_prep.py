@@ -16,11 +16,7 @@ def test_km_to_kwh():
 def sample_distribution_df():
     return pd.DataFrame({
         "Province": ["Ontario", "Ontario", "Ontario"],
-        "Vehicle Type": [
-            "Total, road motor vehicle registrations",
-            "Subcompact",
-            "Pickup truck",
-        ],
+        "Vehicle Type": ["Total", "Subcompact", "Pickup truck"],
         "Fuel Type": ["All fuel types", "All fuel types", "All fuel types"],
         "Vehicles nb": [100, 40, 60],
     })

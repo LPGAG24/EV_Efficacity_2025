@@ -148,6 +148,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     mode = sys.argv[1]
+    mode = sys.argv[1]
 
     if mode == "ckan":
         # Example: download all Tesla and Nissan entries, keep key cols
@@ -163,4 +164,4 @@ if __name__ == "__main__":
         # Example: pivot active light-duty fleet by province for latest year
         pivot = fetch_statcan_fleet("23-10-0308-01")
         print(pivot)
-        
+

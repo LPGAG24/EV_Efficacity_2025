@@ -128,13 +128,15 @@ day_choices = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday
 selected_day = st.sidebar.selectbox("Select Day of Week", day_choices)
 
 # --- Get number of vehicles of that class in province
-if selected_class:
-    try:
+try:
+    if selected_class:
         total_vehicles = dist[(province, selected_class)]["Vehicles nb"].sum()
-    except Exception:
-        total_vehicles = 0
-else:
-    total_vehicles = 0
+    else:
+        total_vehicles = dist[province]["Vehicles nb"].max()
+except Exception:
+    total_vehicles = dist[province]["Vehicles nb"].max()
+if not total_vehicles:
+    total_vehicles = 1000
 
 ev_share = st.sidebar.number_input(
     "EV share (%)",

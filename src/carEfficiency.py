@@ -226,24 +226,3 @@ class ChargerInfo:
             "Charging Time (hours)": charging_times
         })
 
-if __name__ == "__main__":
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    # Example usage
-    data = pd.DataFrame({
-        "Vehicle class": ["Compact: X", "Compact: Y", "Subcompact: Z"],
-        "Combined (Le/100 km)": ["5.6 (20.2 kWh/100 km)", "5.4 (19.5 kWh/100 km)", "4.8 (17.3 kWh/100 km)"]
-    })
-    
-    car_efficiency = CarEfficiency(data)
-    print(car_efficiency.get_efficiency_by_type())
-    print(car_efficiency.get_efficiency_by_type("Compact"))
-
-    # Plotting the efficiency by vehicle type
-    plt.bar(car_efficiency.efficiency_by_vehicle_type["Vehicle class"],
-            car_efficiency.efficiency_by_vehicle_type["Combined (Le/100 km)"])
-    plt.xlabel("Vehicle Class")
-    plt.ylabel("Combined (Le/100 km)")
-    plt.title("Efficiency by Vehicle Type")
-    plt.xticks(rotation=45)
-    plt.show()
