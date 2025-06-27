@@ -1,5 +1,5 @@
 import pandas as pd
-
+from typing import TypedDict
 
 """
 CarEfficiency class
@@ -18,20 +18,22 @@ Usage:
 """
 
 
-#VEHICULE_CLASS = {['Subcompact', 'Mid-size', 'Compact', 'Two-seater', 'Full-size',
-#       'Station wagon: Small', 'Sport utility vehicle: Standard',
-#       'Sport utility vehicle: Small', 'Pickup truck: Standard',
-#       'Minicompact', 'Station wagon: Mid-size', 'Minivan']}
+
 
 class CarEfficiency:
     _SNOW_COEFF = 2  # Coefficient for snow conditions (2x consumption)
 
+
     def __init__(self, data: pd.DataFrame):
+        """vehicle_class: ['Subcompact', 'Mid-size', 'Compact', 'Two-seater', 'Full-size',\n
+       'Station wagon', 'Sport utility vehicle', 'Pickup truck',\n
+       'Minicompact', 'Minivan']"""
         self.data: pd.DataFrame = data
         self.vehicleClass: pd.Series = self.data["Vehicle class"].unique()
         self.fuel_consumption: dict[str, float] = {}
         self.distance: dict[str, float] = {}
-        self.efficiency_percent_by_vehicle_type: dict[str, float] = {}
+        
+        self.efficiency_percent_by_vehicle_type: dict[str, float] = {} 
         self.set_efficiency_by_type()
  
 
@@ -237,7 +239,7 @@ if __name__ == "__main__":
     
     car_efficiency = CarEfficiency(data)
     print(car_efficiency.get_efficiency_by_type())
-    print(car_efficiency.get_efficiency_by_type("Compact"))
+
 
     # Plotting the efficiency by vehicle type
     plt.bar(car_efficiency.efficiency_by_vehicle_type["Vehicle class"],

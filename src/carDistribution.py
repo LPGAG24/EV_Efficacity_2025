@@ -74,8 +74,12 @@ class CarDistribution:
         if isinstance(key, dict):
             mask = pd.Series(True, index=df.index)
             for col, value in key.items():
-                mask &= df[col] == value
+                if isinstance(value, (list, set, tuple, pd.Index)):
+                    mask &= df[col].isin(value)      # ← multiple valeurs
+                else:
+                    mask &= df[col] == value         # ← valeur unique
             return df[mask]
+
 
         # 5. callable  → power‑user hook
         #    (e.g. lambda df: df[df['Province'] == 'Ontario'])
@@ -140,7 +144,7 @@ class CarDistribution:
         Checks if sum of vehicles in the province exceeds the max across entire data.
         """
         if (
-            self.data[self.data["Province"] == self.Province]["Vehicles nb"].sum()
+            self.data[self.data["Province"] == self.Province[0]]["Vehicles nb"].sum()
             > self.initData["Vehicles nb"].max()
         ):
             raise ValueError("Count is greater than total number of vehicles")
@@ -194,13 +198,17 @@ class CarDistribution:
         )
 
 
-    def get_fuel_type_percent_by_vehicle(self) -> pd.DataFrame:
+    def get_fuel_type_percent_by_vehicle(self, selected_types: list|None) -> pd.DataFrame:
         """
         Returns per-vehicle-type percentage of the fleet as a DataFrame.
         """
-        return pd.DataFrame.from_dict(
-            self.fuel_type_percent_by_vehicle, orient="index", columns=["Percent"]
-        )
+        if selected_types is None:
+            selected_types = self.fuel_type_percent_by_vehicle.keys()
+        if isinstance(selected_types, list):
+            filtered = {k: v for k, v in self.fuel_type_percent_by_vehicle.items() if k in selected_types}
+            return pd.DataFrame.from_dict(
+            filtered, orient="index", columns=["Percent"]
+            )
 
 
     def switch_province(self, Province: str):

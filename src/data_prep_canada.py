@@ -154,28 +154,14 @@ if __name__ == "__main__":
             print(df.info())
             print(df.head())
 
-<<<<<<< Updated upstream
-    mode = sys.argv[1]
-
-    if mode == "ckan":
-        # Example: download all Tesla and Nissan entries, keep key cols
-        RID = "026e45b4-eb63-451f-b34f-d9308ea3a3d9"
-        df = download_ckan_resource(
-            resource_id=RID,
-            usecols=("Make", "Model", "Vehicle class", "Combined (kWh/100 km)")
-        )
-        print(df.info())
-        print(df.head())
-
-    elif mode == "statcan":
-        # Example: pivot active light-duty fleet by province for latest year
-        pivot = fetch_statcan_fleet("23-10-0308-01")
-        print(pivot)
-        
-=======
         elif mode == "statcan":
             # Example: pivot active light-duty fleet by province for latest year
             pivot = fetch_statcan_fleet("23-10-0308-01")
             print(pivot)
-
->>>>>>> Stashed changes
+            for prov in pivot["Province"].unique():
+                prov_df = pivot[pivot["Province"] == prov]
+                #addition each vehicle type from each provinces
+                print(f"{prov}: {prov_df['Vehicles nb'].sum()} vehicles")
+            
+            
+        

@@ -5,6 +5,7 @@ import urllib.request, json, folium
 from streamlit_folium import st_folium
 import altair as alt
 import numpy as np
+import webbrowser
 
 from carDistribution import CarDistribution          # your classes
 from carEfficiency   import CarEfficiency
@@ -46,7 +47,7 @@ def load_fleet():
 fleet_df = load_fleet()
 
 provinces = sorted(fleet_df["Province"].unique())
-province  = st.sidebar.selectbox("Province", provinces, index=provinces.index("Canada"))
+province  = st.sidebar.multiselect("Province", provinces, default=["Canada"])
 
 # 2) Vehicle‑class multiselect (for efficiency tables)
 selected_types = []
@@ -76,21 +77,38 @@ st.sidebar.header("Vehicle")
 selected_types = st.sidebar.multiselect(
     "Vehicle class",
     options=electric_eff.efficiency_by_vehicle_type["Vehicle class"].tolist(),
+    default=["Compact", "Subcompact", "Sport utility vehicle", "Pickup truck"]
 )
-makes = sorted(electric_eff.data["Make"].unique())
-selected_make = st.sidebar.selectbox("Make", makes)
-models = sorted(
-    electric_eff.data[electric_eff.data["Make"] == selected_make]["Model"].unique()
-)
-selected_model = st.sidebar.selectbox("Model", models)
 
-model_row = electric_eff[{"Make": selected_make, "Model": selected_model}]
-if not model_row.empty:
-    eff = float(model_row["Combined (kWh/100 km)"].iloc[0])
-    selected_class = model_row["Vehicle class"].iloc[0]
+
+show_vehicle_picker = st.sidebar.checkbox("Select vehicle")
+if show_vehicle_picker:
+    makes = sorted(electric_eff.data["Make"].unique())
+    selected_make = st.sidebar.selectbox("Make", makes)
+    models = sorted(
+        electric_eff.data[electric_eff.data["Make"] == selected_make]["Model"].unique()
+    )
+    selected_model = st.sidebar.selectbox("Model", models)
+
+    model_row = electric_eff[{"Make": selected_make, "Model": selected_model}]
+    if not model_row.empty:
+        eff = float(model_row["Combined (kWh/100 km)"].iloc[0])
+        selected_class = model_row["Vehicle class"].iloc[0]
+    else:
+        eff = 18.0
+        selected_class = None
+    
+    st.sidebar.write(f"🔋 {eff:.1f} kWh/100 km")
+    if selected_class:
+        st.sidebar.write(f"🚗 Class : {selected_class}")
 else:
-    eff = 18.0
-    selected_class = None
+    #use mean of current vehicle class selected
+    if selected_types:
+        eff = electric_eff.efficiency_by_vehicle_type[
+            electric_eff.efficiency_by_vehicle_type["Vehicle class"].isin(selected_types)
+        ]
+    else:
+        eff = electric_eff.efficiency_by_vehicle_type
 
 # ── Layout ──────────────────────────────────────────────────────────────────
 st.title(f"🚗 EV & Hybrid Dashboard — {province}")
@@ -105,32 +123,29 @@ with st.container():
         st.table(dist.get_fuel_type())
 
         st.subheader("Vehicle‑type mix")
-        st.table(dist.get_fuel_type_percent_by_vehicle())
+        st.table(dist.get_fuel_type_percent_by_vehicle(selected_types))
 
     with col2:
         st.header("2 · Efficiency (kWh/100 km)")
-        tabs = st.tabs(["⚡ Electric", "🔋 Hybrid"])
+        tab1, tab2 = st.tabs(["⚡ Chart", "DataFrame"])
 
-        with tabs[0]:
-            df_e = electric_eff.efficiency_by_vehicle_type
-            if selected_types:
-                df_e = df_e[df_e["Vehicle class"].isin(selected_types)]
-            st.dataframe(df_e, use_container_width=True)
-
-        with tabs[1]:
-            df_h = hybrid_eff.efficiency_by_vehicle_type
-            if selected_types:
-                df_h = df_h[df_h["Vehicle class"].isin(selected_types)]
-            st.dataframe(df_h, use_container_width=True)
+        df_e = electric_eff.efficiency_by_vehicle_type
+        chart_df = (
+            df_e[["Vehicle class", "Combined (Le/100 km)"]]
+                .set_index("Vehicle class")          # x-axis
+                .sort_index()                        # optional: alphabetic order
+        )
+        tab1.bar_chart(chart_df, use_container_width=True)
+        tab2.dataframe(df_e, use_container_width=True)
 
 # --- Sidebar: user selects day and vehicle class
 day_choices = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 selected_day = st.sidebar.selectbox("Select Day of Week", day_choices)
 
 # --- Get number of vehicles of that class in province
-if selected_class:
+if selected_types:
     try:
-        total_vehicles = dist[(province, selected_class)]["Vehicles nb"].sum()
+        total_vehicles = subset = dist[{"Province": province, "Vehicle Type": selected_types}]["Vehicles nb"].sum()
     except Exception:
         total_vehicles = 0
 else:
@@ -227,10 +242,11 @@ st.altair_chart(profile_chart(home_profile, "Home arrival distribution"))
 st.altair_chart(profile_chart(work_profile, "Work arrival distribution"))
 
 # --- Compute energy per 30-min slot -----------------------------------------
-energy_per_car = avg_distance * eff / 100
+energy_per_car = avg_distance * eff["Combined (Le/100 km)"] / 100
 time_bins = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 30)]
 
-home_energy = home_share * car_count * energy_per_car * home_profile
+#Home share * car_count * (energy_per_car @ percent of that same car type) * home profile
+home_energy = home_share * car_count * (energy_per_car @ selected_types) * home_profile
 work_energy = work_share * car_count * energy_per_car * work_profile
 
 energy_df = pd.DataFrame({
@@ -301,4 +317,3 @@ folium.Choropleth(
 
 folium.LayerControl().add_to(m)
 st_folium(m, width=900, height=550)
-
