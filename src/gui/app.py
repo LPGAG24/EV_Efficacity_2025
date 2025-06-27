@@ -68,6 +68,13 @@ def load_electric_efficiency():
 def load_hybrid_efficiency():
     return download_ckan_resource("8812228b-a6aa-4303-b3d0-66489225120d")
 
+@st.cache_resource(ttl=24 * 3600)       # ← 24 h de cache, ajuste si besoin
+def load_car_usage() -> CarUsage:
+    cu = CarUsage()
+    cu.fetchData()              # charge les données de StatCan
+    return cu                   # renvoie l’objet entier
+
+
 electric_eff = CarEfficiency(load_electric_efficiency())
 hybrid_eff   = CarEfficiency(load_hybrid_efficiency())
 
@@ -77,7 +84,7 @@ st.sidebar.header("Vehicle")
 selected_types = st.sidebar.multiselect(
     "Vehicle class",
     options=electric_eff.efficiency_by_vehicle_type["Vehicle class"].tolist(),
-    default=["Compact", "Subcompact", "Sport utility vehicle", "Pickup truck"]
+    default=["Compact"]
 )
 
 
@@ -88,7 +95,7 @@ if show_vehicle_picker:
     models = sorted(
         electric_eff.data[electric_eff.data["Make"] == selected_make]["Model"].unique()
     )
-    selected_model = st.sidebar.selectbox("Model", models)
+    selected_model = st.sidebar.selectbox("Model", models, default=None)
 
     model_row = electric_eff[{"Make": selected_make, "Model": selected_model}]
     if not model_row.empty:
@@ -146,6 +153,7 @@ selected_day = st.sidebar.selectbox("Select Day of Week", day_choices)
 if selected_types:
     try:
         total_vehicles = subset = dist[{"Province": province, "Vehicle Type": selected_types}]["Vehicles nb"].sum()
+        #add percents of the vehicle types in total_vehicles
     except Exception:
         total_vehicles = 0
 else:
@@ -153,10 +161,10 @@ else:
 
 ev_share = st.sidebar.number_input(
     "EV share (%)",
-    min_value=0,
-    max_value=100,
-    value=10,
-    step=1,
+    min_value=0.0,
+    max_value=100.0,
+    value=10.0,
+    step=1.0,
 )
 default_count = int(total_vehicles * ev_share / 100)
 car_count = st.sidebar.number_input(
@@ -170,8 +178,7 @@ car_count = st.sidebar.number_input(
 
 # --- Get avg distance driven per day for that province (use CarUsage or fallback)
 try:
-    cu = CarUsage()
-    cu.fetchData()
+    cu = load_car_usage()
     dist_per_day = cu[{"Province": province}]  # returns DataFrame
     avg_distance = dist_per_day[f"{'Weekday' if selected_day in cu.weekdays else 'Weekend'}_km"].values[0]
 except Exception:
@@ -231,23 +238,94 @@ work_share = 1.0 - home_share
 home_profile = gaussian_profile(home_mu, home_sigma)
 work_profile = gaussian_profile(work_mu, work_sigma)
 
-def profile_chart(prof, title):
-    df = pd.DataFrame({
-        "Time": [f"{i//2:02d}:{'30' if i%2 else '00'}" for i in range(48)],
-        "Prob": prof
-    })
-    return alt.Chart(df).mark_bar().encode(x='Time', y='Prob').properties(title=title, width=700, height=250)
 
-st.altair_chart(profile_chart(home_profile, "Home arrival distribution"))
-st.altair_chart(profile_chart(work_profile, "Work arrival distribution"))
+
+
+
+# ── 1 · profils initiaux (gaussienne) ───────────────────────────────
+home_prof_default = gaussian_profile(home_mu, home_sigma)   # ndarray 48×1
+work_prof_default = gaussian_profile(work_mu, work_sigma)
+
+# helper : fabrique un DataFrame Time/Prob pour l’éditeur
+def profile_df(prof: np.ndarray) -> pd.DataFrame:
+    return pd.DataFrame({
+        "Time": [f"{i//2:02d}:{'30' if i%2 else '00'}" for i in range(48)],
+        "Prob": prof,
+    })
+
+# ── 2 · Home — data_editor + renormalisation ───────────────────────
+st.sidebar.subheader("Home arrival distribution (editable)")
+home_df = profile_df(home_prof_default)
+
+edited_home = st.data_editor(
+    home_df,
+    num_rows="fixed",
+    column_config={
+        "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
+    },
+    key="home_profile",            # clé pour conserver l’édition
+    use_container_width=True,
+)
+
+edited_home["Prob"] = edited_home["Prob"].clip(lower=0)
+edited_home["Prob"] = edited_home["Prob"] / edited_home["Prob"].sum()
+home_profile = edited_home["Prob"].to_numpy()          # ← vecteur final
+
+st.altair_chart(
+    alt.Chart(edited_home)
+        .mark_bar()
+        .encode(x="Time", y="Prob")
+        .properties(title="Home arrival distribution", width=700, height=250),
+    use_container_width=True,
+)
+
+# ── 3 · Work — même logique ─────────────────────────────────────────
+st.sidebar.subheader("Work arrival distribution (editable)")
+work_df = profile_df(work_prof_default)
+
+edited_work = st.data_editor(
+    work_df,
+    num_rows="fixed",
+    column_config={
+        "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
+    },
+    key="work_profile",
+    use_container_width=True,
+)
+
+edited_work["Prob"] = edited_work["Prob"].clip(lower=0)
+edited_work["Prob"] = edited_work["Prob"] / edited_work["Prob"].sum()
+work_profile = edited_work["Prob"].to_numpy()
+
+st.altair_chart(
+    alt.Chart(edited_work)
+        .mark_bar()
+        .encode(x="Time", y="Prob")
+        .properties(title="Work arrival distribution", width=700, height=250),
+    use_container_width=True,
+)
+
+
+
+
+
 
 # --- Compute energy per 30-min slot -----------------------------------------
-energy_per_car = avg_distance * eff["Combined (Le/100 km)"] / 100
+eff.loc[:, "Combined (Le/100 km)"] = (
+    eff["Combined (Le/100 km)"] * avg_distance / 100
+)
 time_bins = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 30)]
 
 #Home share * car_count * (energy_per_car @ percent of that same car type) * home profile
-home_energy = home_share * car_count * (energy_per_car @ selected_types) * home_profile
-work_energy = work_share * car_count * energy_per_car * work_profile
+
+efficiency_total_number = 0.0
+for vprov in provinces:
+    for vtype in selected_types:
+        eff_i  = eff.loc[eff["Vehicle class"] == vtype, "Combined (Le/100 km)"][0]
+        dist_i = dist.data.loc[(dist.data["Vehicle Type"] == vtype) & (dist.data["Province"] == vprov)] ["Vehicles nb"].sum()
+        efficiency_total_number += float(eff_i) * float(dist_i)
+home_energy = home_share * efficiency_total_number * home_profile * ev_share
+work_energy = work_share * efficiency_total_number * work_profile * ev_share
 
 energy_df = pd.DataFrame({
     "Time": time_bins,
@@ -262,7 +340,8 @@ chart = alt.Chart(energy_long).mark_area(opacity=0.7).encode(
     y=alt.Y('kWh', stack=None),
     color='Source'
 ).properties(
-    title=f"Daily Charging Demand ({province}, {selected_model})",
+    title=f"Daily Charging Demand ({province}, "
+    f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
     width=900,
     height=350
 )

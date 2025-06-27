@@ -3,12 +3,12 @@ import numpy as np
 import re
 import math
 import util.normalizer as util
+import streamlit as st
 
 class CarUsage:
     """CarUsage class for analyzing vehicle usage data.
     Calculates average distance traveled and recharge energy needed per day.
     """
-
     def __init__(self):
         self.data: pd.DataFrame = None
         self.weekdays: list[str] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]

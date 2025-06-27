@@ -116,7 +116,7 @@ class CarDistribution:
             df["Vehicle Type"].str.split(r"[:,]", n=1, expand=True)[0].str.strip()
         )
         mapping = {
-            "Passenger cars": "Subcompact",
+            "Passenger cars": "Compact",
             "Pickup trucks": "Pickup truck",
             "Sport utility vehicles": "Sport utility vehicle",
             "Multi-purpose vehicles": "Minivan",
@@ -215,6 +215,28 @@ class CarDistribution:
         self.Province = Province
         self.set_fuel_type_percent()
         self.set_fuel_type_percent_by_vehicle()
+        
+    def __call__(self) -> pd.DataFrame:
+        return self.data
+    
+    def __getitem__(self, key) -> pd.DataFrame:
+        """
+        Flexible selector for accessing data by Province, Vehicle Type, or Fuel Type.
+        """
+        if isinstance(key, str):
+            return self.data[self.data["Province"] == key]
+        elif isinstance(key, tuple):
+            if len(key) == 2:
+                return self.data[(self.data["Province"] == key[0]) & (self.data["Vehicle Type"] == key[1])]
+            elif len(key) == 3:
+                return self.data[(self.data["Province"] == key[0]) & (self.data["Vehicle Type"] == key[1]) & (self.data["Fuel Type"] == key[2])]
+        elif isinstance(key, dict):
+            mask = pd.Series(True, index=self.data.index)
+            for col, value in key.items():
+                mask &= self.data[col] == value
+            return self.data[mask]
+        else:
+            raise TypeError("Key must be str, tuple, or dict.")
 
 
 if __name__ == "__main__":
