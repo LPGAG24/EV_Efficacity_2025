@@ -143,10 +143,18 @@ def fetch_statcan_fleet(table_id: str = "23-10-0308-01") -> pd.DataFrame:
 
 # ─── Main entrypoint ───────────────────────────────────────────────────────
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or sys.argv[1] not in ("ckan", "statcan"):
-        print("Usage: python data_prep.py [ckan|statcan]")
-        sys.exit(1)
+    for mode in ["ckan", "statcan"]:
+        if mode == "ckan":
+            # Example: download all Tesla and Nissan entries, keep key cols
+            RID = "026e45b4-eb63-451f-b34f-d9308ea3a3d9"
+            df = download_ckan_resource(
+                resource_id=RID,
+                usecols=("Make", "Model", "Vehicle class", "Combined (kWh/100 km)")
+            )
+            print(df.info())
+            print(df.head())
 
+<<<<<<< Updated upstream
     mode = sys.argv[1]
 
     if mode == "ckan":
@@ -164,3 +172,10 @@ if __name__ == "__main__":
         pivot = fetch_statcan_fleet("23-10-0308-01")
         print(pivot)
         
+=======
+        elif mode == "statcan":
+            # Example: pivot active light-duty fleet by province for latest year
+            pivot = fetch_statcan_fleet("23-10-0308-01")
+            print(pivot)
+
+>>>>>>> Stashed changes
