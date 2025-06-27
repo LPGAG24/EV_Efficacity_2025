@@ -323,7 +323,7 @@ for vprov in provinces:
     for vtype in selected_types:
         eff_i  = eff.loc[eff["Vehicle class"] == vtype, "Combined (Le/100 km)"][0]
         dist_i = dist.data.loc[(dist.data["Vehicle Type"] == vtype) & (dist.data["Province"] == vprov)] ["Vehicles nb"].sum()
-        efficiency_total_number += float(eff_i) * float(dist_i)
+        efficiency_total_number += float(eff_i) * float([dist_i if car_count <= 0 else car_count][0])
 home_energy = home_share * efficiency_total_number * home_profile * ev_share
 work_energy = work_share * efficiency_total_number * work_profile * ev_share
 
