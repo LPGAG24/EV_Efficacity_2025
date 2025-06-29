@@ -88,6 +88,7 @@ selected_types = st.sidebar.multiselect(
 )
 
 
+recharge_time = 8.0
 show_vehicle_picker = st.sidebar.checkbox("Select vehicle")
 if show_vehicle_picker:
     makes = sorted(electric_eff.data["Make"].unique())
@@ -100,14 +101,17 @@ if show_vehicle_picker:
     model_row = electric_eff[{"Make": selected_make, "Model": selected_model}]
     if not model_row.empty:
         eff = float(model_row["Combined (kWh/100 km)"].iloc[0])
+        recharge_time = float(model_row["Recharge time (h)"].iloc[0])
         selected_class = model_row["Vehicle class"].iloc[0]
     else:
         eff = 18.0
+        recharge_time = 8.0
         selected_class = None
     
     st.sidebar.write(f"🔋 {eff:.1f} kWh/100 km")
     if selected_class:
         st.sidebar.write(f"🚗 Class : {selected_class}")
+    st.sidebar.write(f"⏱ {recharge_time} h recharge")
 else:
     #use mean of current vehicle class selected
     if selected_types:
@@ -116,6 +120,17 @@ else:
         ]
     else:
         eff = electric_eff.efficiency_by_vehicle_type
+    if selected_types:
+        recharge_time = pd.to_numeric(
+            electric_eff.data[electric_eff.data["Vehicle class"].isin(selected_types)][
+                "Recharge time (h)"
+            ],
+            errors="coerce",
+        ).mean()
+    else:
+        recharge_time = pd.to_numeric(
+            electric_eff.data["Recharge time (h)"], errors="coerce"
+        ).mean()
 
 # ── Layout ──────────────────────────────────────────────────────────────────
 st.title(f"🚗 EV & Hybrid Dashboard — {province}")
@@ -310,42 +325,61 @@ st.altair_chart(
 
 
 
-# --- Compute energy per 30-min slot -----------------------------------------
-eff.loc[:, "Combined (Le/100 km)"] = (
-    eff["Combined (Le/100 km)"] * avg_distance / 100
-)
+# --- Compute charging cars and electric demand ------------------------------
 time_bins = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 30)]
+slot_len = 0.5
+n_slots = max(1, int(recharge_time / slot_len))
 
-#Home share * car_count * (energy_per_car @ percent of that same car type) * home profile
+home_conv = np.convolve(home_profile, np.ones(n_slots), mode="same")
+work_conv = np.convolve(work_profile, np.ones(n_slots), mode="same")
 
-efficiency_total_number = 0.0
-for vprov in provinces:
-    for vtype in selected_types:
-        eff_i  = eff.loc[eff["Vehicle class"] == vtype, "Combined (Le/100 km)"][0]
-        dist_i = dist.data.loc[(dist.data["Vehicle Type"] == vtype) & (dist.data["Province"] == vprov)] ["Vehicles nb"].sum()
-        efficiency_total_number += float(eff_i) * float([dist_i if car_count <= 0 else car_count][0])
-home_energy = home_share * efficiency_total_number * home_profile * ev_share
-work_energy = work_share * efficiency_total_number * work_profile * ev_share
+home_cars = home_share * car_count * home_conv
+work_cars = work_share * car_count * work_conv
 
-energy_df = pd.DataFrame({
+cars_df = pd.DataFrame({
     "Time": time_bins,
-    "Home_kWh": home_energy,
-    "Work_kWh": work_energy
+    "Home_cars": home_cars,
+    "Work_cars": work_cars,
 })
-energy_df["Total_kWh"] = energy_df["Home_kWh"] + energy_df["Work_kWh"]
+cars_df["Total_cars"] = cars_df["Home_cars"] + cars_df["Work_cars"]
 
-energy_long = energy_df.melt(id_vars="Time", value_vars=["Home_kWh", "Work_kWh"], var_name="Source", value_name="kWh")
-chart = alt.Chart(energy_long).mark_area(opacity=0.7).encode(
+cars_long = cars_df.melt(id_vars="Time", value_vars=["Home_cars", "Work_cars"],
+                         var_name="Source", value_name="Cars")
+chart_cars = alt.Chart(cars_long).mark_area(opacity=0.7).encode(
     x=alt.X('Time', sort=None),
-    y=alt.Y('kWh', stack=None),
+    y=alt.Y('Cars', stack=None),
     color='Source'
 ).properties(
-    title=f"Daily Charging Demand ({province}, "
-    f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
+    title=f"Daily number of Charging cars ({province}, "
+           f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
     width=900,
     height=350
 )
-st.altair_chart(chart, use_container_width=True)
+st.altair_chart(chart_cars, use_container_width=True)
+
+power_home = home_cars * home_speed
+power_work = work_cars * work_speed
+
+power_df = pd.DataFrame({
+    "Time": time_bins,
+    "Home_kW": power_home,
+    "Work_kW": power_work,
+})
+power_df["Total_kW"] = power_df["Home_kW"] + power_df["Work_kW"]
+
+power_long = power_df.melt(id_vars="Time", value_vars=["Home_kW", "Work_kW"],
+                           var_name="Source", value_name="kW")
+chart_power = alt.Chart(power_long).mark_area(opacity=0.7).encode(
+    x=alt.X('Time', sort=None),
+    y=alt.Y('kW', stack=None),
+    color='Source'
+).properties(
+    title=f"Electric demand ({province}, "
+           f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
+    width=900,
+    height=350
+)
+st.altair_chart(chart_power, use_container_width=True)
 
 
 # ── 3 · Canada EV‑share choropleth ──────────────────────────────────────────
