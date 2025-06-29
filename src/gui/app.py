@@ -7,6 +7,8 @@ import altair as alt
 import numpy as np
 import webbrowser
 
+from aggregate_power import aggregate_power
+
 from carDistribution import CarDistribution          # your classes
 from carEfficiency   import CarEfficiency
 from carRecharge     import CarRecharge
@@ -367,13 +369,32 @@ power_df = pd.DataFrame({
 })
 power_df["Total_kW"] = power_df["Home_kW"] + power_df["Work_kW"]
 
+# --- Demonstrate aggregate_power utility ---------------------------------
+arrivals_mat = np.column_stack([
+    home_share * car_count * home_profile,
+    work_share * car_count * work_profile,
+])
+kernels = np.column_stack([
+    np.full(n_slots, home_speed),
+    np.full(n_slots, work_speed),
+])
+power_df["Agg_kW"] = aggregate_power(arrivals_mat, kernels)
+
 power_long = power_df.melt(id_vars="Time", value_vars=["Home_kW", "Work_kW"],
                            var_name="Source", value_name="kW")
-chart_power = alt.Chart(power_long).mark_area(opacity=0.7).encode(
+
+area_chart = alt.Chart(power_long).mark_area(opacity=0.7).encode(
     x=alt.X('Time', sort=None),
     y=alt.Y('kW', stack=None),
     color='Source'
-).properties(
+)
+
+line_chart = alt.Chart(power_df).mark_line(color='black').encode(
+    x='Time',
+    y='Agg_kW'
+)
+
+chart_power = (area_chart + line_chart).properties(
     title=f"Electric demand ({province}, "
            f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
     width=900,
