@@ -7,6 +7,8 @@ import altair as alt
 import numpy as np
 import webbrowser
 
+from aggregate_power import aggregate_power
+
 from carDistribution import CarDistribution          # your classes
 from carEfficiency   import CarEfficiency
 from carRecharge     import CarRecharge
@@ -14,12 +16,26 @@ from carUsage        import CarUsage
 from data_prep_canada import fetch_statcan_fleet, download_ckan_resource
 
 
-def gaussian_profile(mu: float, sigma: float, n: int = 48) -> np.ndarray:
-    """Return a normalised 30‑min profile centred on ``mu`` hours."""
+# resolution (number of slots in a 24 h day)
+n_res = 48
+
+
+def gaussian_profile(mu: float, sigma: float, n: int) -> np.ndarray:
+    """Return a normalised profile with ``n`` slots centred on ``mu`` hours."""
     t = np.linspace(0, 24, n, endpoint=False)
     prof = np.exp(-((t - mu) ** 2) / (2 * sigma * sigma))
     prof[prof < 0] = 0
     return prof / prof.sum()
+
+
+def profile_df(prof: np.ndarray) -> pd.DataFrame:
+    """Helper to build a Time/Prob DataFrame for editing profiles."""
+    minutes_per_slot = 1440 // n_res
+    times = [
+        f"{(i * minutes_per_slot) // 60:02d}:{(i * minutes_per_slot) % 60:02d}"
+        for i in range(n_res)
+    ]
+    return pd.DataFrame({"Time": times, "Prob": prof})
 
 st.set_page_config(page_title="EV & Hybrid Dashboard", layout="wide")
 
@@ -37,6 +53,17 @@ canada_geo = load_canada_geojson()
 
 # ── Sidebar controls ────────────────────────────────────────────────────────
 st.sidebar.title("Filters")
+
+# choose resolution (must divide 1440 min)
+n_res = int(
+    st.sidebar.number_input(
+        "Time resolution (#slots per day)",
+        min_value=24,
+        max_value=288,
+        step=24,
+        value=n_res,
+    )
+)
 
 # 1) Province chooser
 
@@ -59,6 +86,15 @@ def get_dist(fleet_df, province):
     # fast: in-memory DataFrame processing
     return CarDistribution(fleet_df, Province=province)
 dist = get_dist(fleet_df, province)
+
+
+def count_vehicles(dist: CarDistribution, provinces: list[str], types: list[str] | None) -> int:
+    """Return total vehicle stock for selected provinces and vehicle types."""
+    df = dist.data
+    mask = df["Province"].isin(provinces)
+    if types:
+        mask &= df["Vehicle Type"].isin(types)
+    return int(df.loc[mask, "Vehicles nb"].sum())
 
 @st.cache_data
 def load_electric_efficiency():
@@ -164,15 +200,8 @@ with st.container():
 day_choices = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 selected_day = st.sidebar.selectbox("Select Day of Week", day_choices)
 
-# --- Get number of vehicles of that class in province
-if selected_types:
-    try:
-        total_vehicles = subset = dist[{"Province": province, "Vehicle Type": selected_types}]["Vehicles nb"].sum()
-        #add percents of the vehicle types in total_vehicles
-    except Exception:
-        total_vehicles = 0
-else:
-    total_vehicles = 0
+# --- Get number of vehicles of that class in selected provinces
+total_vehicles = count_vehicles(dist, province, selected_types)
 
 ev_share = st.sidebar.number_input(
     "EV share (%)",
@@ -201,38 +230,6 @@ except Exception:
 
 # --- Custom charging profiles -----------------------------------------------
 st.sidebar.header("Charging profiles")
-home_mu = st.sidebar.number_input(
-    "Home peak hour",
-    min_value=0.0,
-    max_value=23.5,
-    value=18.0,
-    step=0.5,
-)
-home_sigma = st.sidebar.number_input(
-    "Home σ",
-    min_value=0.5,
-    max_value=5.0,
-    value=2.0,
-    step=0.5,
-)
-work_mu = st.sidebar.number_input(
-    "Work peak hour",
-    min_value=0.0,
-    max_value=23.5,
-    value=9.0,
-    step=0.5,
-)
-work_sigma = st.sidebar.number_input(
-    "Work σ",
-    min_value=0.5,
-    max_value=5.0,
-    value=2.0,
-    step=0.5,
-)
-
-home_speed = st.sidebar.number_input("Home charger speed (kW)", value=7.2)
-work_speed = st.sidebar.number_input("Work charger speed (kW)", value=11.0)
-
 home_only = st.sidebar.checkbox("Home only", value=False)
 work_only = st.sidebar.checkbox("Work only", value=False)
 if home_only:
@@ -250,84 +247,101 @@ else:
 
 work_share = 1.0 - home_share
 
-home_profile = gaussian_profile(home_mu, home_sigma)
-work_profile = gaussian_profile(work_mu, work_sigma)
+with st.container():
+    st.subheader("Home arrival distribution (editable)")
+    col1, col2, col3 = st.columns(3)
+    home_mu = col1.number_input(
+        "Home peak hour",
+        min_value=0.0,
+        max_value=23.5,
+        value=18.0,
+        step=0.5,
+    )
+    home_sigma = col2.number_input(
+        "Home σ",
+        min_value=0.5,
+        max_value=5.0,
+        value=2.0,
+        step=0.5,
+    )
+    home_speed = col3.number_input("Home charger speed (kW)", value=7.2)
 
+    home_prof_default = gaussian_profile(home_mu, home_sigma, n_res)
+    home_df = profile_df(home_prof_default)
+    edited_home = st.data_editor(
+        home_df,
+        num_rows="fixed",
+        column_config={
+            "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
+        },
+        key="home_profile",
+        use_container_width=True,
+    )
+    edited_home["Prob"] = edited_home["Prob"].clip(lower=0)
+    edited_home["Prob"] = edited_home["Prob"] / edited_home["Prob"].sum()
+    home_profile = edited_home["Prob"].to_numpy()
 
-
-
-
-# ── 1 · profils initiaux (gaussienne) ───────────────────────────────
-home_prof_default = gaussian_profile(home_mu, home_sigma)   # ndarray 48×1
-work_prof_default = gaussian_profile(work_mu, work_sigma)
-
-# helper : fabrique un DataFrame Time/Prob pour l’éditeur
-def profile_df(prof: np.ndarray) -> pd.DataFrame:
-    return pd.DataFrame({
-        "Time": [f"{i//2:02d}:{'30' if i%2 else '00'}" for i in range(48)],
-        "Prob": prof,
-    })
-
-# ── 2 · Home — data_editor + renormalisation ───────────────────────
-st.sidebar.subheader("Home arrival distribution (editable)")
-home_df = profile_df(home_prof_default)
-
-edited_home = st.data_editor(
-    home_df,
-    num_rows="fixed",
-    column_config={
-        "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
-    },
-    key="home_profile",            # clé pour conserver l’édition
-    use_container_width=True,
-)
-
-edited_home["Prob"] = edited_home["Prob"].clip(lower=0)
-edited_home["Prob"] = edited_home["Prob"] / edited_home["Prob"].sum()
-home_profile = edited_home["Prob"].to_numpy()          # ← vecteur final
-
-st.altair_chart(
-    alt.Chart(edited_home)
+    st.altair_chart(
+        alt.Chart(edited_home)
         .mark_bar()
         .encode(x="Time", y="Prob")
         .properties(title="Home arrival distribution", width=700, height=250),
-    use_container_width=True,
-)
+        use_container_width=True,
+    )
 
-# ── 3 · Work — même logique ─────────────────────────────────────────
-st.sidebar.subheader("Work arrival distribution (editable)")
-work_df = profile_df(work_prof_default)
+with st.container():
+    st.subheader("Work arrival distribution (editable)")
+    col1, col2, col3 = st.columns(3)
+    work_mu = col1.number_input(
+        "Work peak hour",
+        min_value=0.0,
+        max_value=23.5,
+        value=9.0,
+        step=0.5,
+    )
+    work_sigma = col2.number_input(
+        "Work σ",
+        min_value=0.5,
+        max_value=5.0,
+        value=2.0,
+        step=0.5,
+    )
+    work_speed = col3.number_input("Work charger speed (kW)", value=11.0)
 
-edited_work = st.data_editor(
-    work_df,
-    num_rows="fixed",
-    column_config={
-        "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
-    },
-    key="work_profile",
-    use_container_width=True,
-)
+    work_prof_default = gaussian_profile(work_mu, work_sigma, n_res)
+    work_df = profile_df(work_prof_default)
+    edited_work = st.data_editor(
+        work_df,
+        num_rows="fixed",
+        column_config={
+            "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
+        },
+        key="work_profile",
+        use_container_width=True,
+    )
+    edited_work["Prob"] = edited_work["Prob"].clip(lower=0)
+    edited_work["Prob"] = edited_work["Prob"] / edited_work["Prob"].sum()
+    work_profile = edited_work["Prob"].to_numpy()
 
-edited_work["Prob"] = edited_work["Prob"].clip(lower=0)
-edited_work["Prob"] = edited_work["Prob"] / edited_work["Prob"].sum()
-work_profile = edited_work["Prob"].to_numpy()
-
-st.altair_chart(
-    alt.Chart(edited_work)
+    st.altair_chart(
+        alt.Chart(edited_work)
         .mark_bar()
         .encode(x="Time", y="Prob")
         .properties(title="Work arrival distribution", width=700, height=250),
-    use_container_width=True,
-)
-
+        use_container_width=True,
+    )
 
 
 
 
 
 # --- Compute charging cars and electric demand ------------------------------
-time_bins = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 30)]
-slot_len = 0.5
+minutes_per_slot = 1440 // n_res
+time_bins = [
+    f"{(i * minutes_per_slot) // 60:02d}:{(i * minutes_per_slot) % 60:02d}"
+    for i in range(n_res)
+]
+slot_len = 24 / n_res
 n_slots = max(1, int(recharge_time / slot_len))
 
 home_conv = np.convolve(home_profile, np.ones(n_slots), mode="same")
@@ -367,13 +381,32 @@ power_df = pd.DataFrame({
 })
 power_df["Total_kW"] = power_df["Home_kW"] + power_df["Work_kW"]
 
+# --- Demonstrate aggregate_power utility ---------------------------------
+arrivals_mat = np.column_stack([
+    home_share * car_count * home_profile,
+    work_share * car_count * work_profile,
+])
+kernels = np.column_stack([
+    np.full(n_slots, home_speed),
+    np.full(n_slots, work_speed),
+])
+power_df["Agg_kW"] = aggregate_power(arrivals_mat, kernels)
+
 power_long = power_df.melt(id_vars="Time", value_vars=["Home_kW", "Work_kW"],
                            var_name="Source", value_name="kW")
-chart_power = alt.Chart(power_long).mark_area(opacity=0.7).encode(
+
+area_chart = alt.Chart(power_long).mark_area(opacity=0.7).encode(
     x=alt.X('Time', sort=None),
     y=alt.Y('kW', stack=None),
     color='Source'
-).properties(
+)
+
+line_chart = alt.Chart(power_df).mark_line(color='black').encode(
+    x='Time',
+    y='Agg_kW'
+)
+
+chart_power = (area_chart + line_chart).properties(
     title=f"Electric demand ({province}, "
            f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
     width=900,
