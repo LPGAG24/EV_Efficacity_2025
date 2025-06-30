@@ -19,7 +19,7 @@ from data_prep_canada import fetch_statcan_fleet, download_ckan_resource
 # resolution (number of slots in a 24 h day)
 n_res = 48
 
-
+# ── Helper functions ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 def gaussian_profile(mu: float, sigma: float, n: int) -> np.ndarray:
     """Return a normalised profile with ``n`` slots centred on ``mu`` hours."""
     t = np.linspace(0, 24, n, endpoint=False)
@@ -39,7 +39,7 @@ def profile_df(prof: np.ndarray) -> pd.DataFrame:
 
 st.set_page_config(page_title="EV & Hybrid Dashboard", layout="wide")
 
-# ── GeoJSON helper ──────────────────────────────────────────────────────────
+# ── GeoJSON helper (get number of cars)─────────────────────────────────────────────────────────────────────────────────────────────
 @st.cache_data
 def load_canada_geojson():
     url = (
@@ -51,21 +51,20 @@ def load_canada_geojson():
 
 canada_geo = load_canada_geojson()
 
-# ── Sidebar controls ────────────────────────────────────────────────────────
+# ── Sidebar controls ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 st.sidebar.title("Filters")
 
-# choose resolution (must divide 1440 min)
-n_res = int(
-    st.sidebar.number_input(
-        "Time resolution (#slots per day)",
-        min_value=24,
-        max_value=288,
-        step=24,
-        value=n_res,
-    )
+slot_minutes_options = [60, 30, 15, 10, 5, 2, 1]
+slot_minutes = st.sidebar.selectbox(
+    "Durée d’un créneau (min)",
+    slot_minutes_options,
+    index=1,                       # valeur par défaut 30 min
+    format_func=lambda x: f"{x:g} min"
 )
 
-# 1) Province chooser
+n_res = int(24 * 60 / slot_minutes)   # 24 h × 60 / durée d’un créneau
+st.sidebar.write(f"→ {n_res} créneaux par jour")
+
 
 @st.cache_data
 def load_fleet():
@@ -79,7 +78,7 @@ province  = st.sidebar.multiselect("Province", provinces, default=["Canada"])
 # 2) Vehicle‑class multiselect (for efficiency tables)
 selected_types = []
 
-# ── Data prep ───────────────────────────────────────────────────────────────
+# ── Data prep ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Distribution object (for fleet tables)
 @st.cache_resource
 def get_dist(fleet_df, province):
@@ -106,7 +105,7 @@ electric_eff = CarEfficiency(load_electric_efficiency())
 hybrid_eff   = CarEfficiency(load_hybrid_efficiency())
 
 
-# ── Vehicle selection ──────────────────────────────────────────────────────
+# ── Vehicle selection ───────────────────────────────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("Vehicle")
 selected_types = st.sidebar.multiselect(
     "Vehicle class",
@@ -159,7 +158,7 @@ else:
             electric_eff.data["Recharge time (h)"], errors="coerce"
         ).mean()
 
-# ── Layout ──────────────────────────────────────────────────────────────────
+# ── Layout ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 st.title(f"🚗 EV & Hybrid Dashboard — {province}")
 
 # 1 & 2: tables and efficiency (your original code)
@@ -216,9 +215,8 @@ car_count = st.sidebar.number_input(
     step=1,
 )
 
-# 'eff' was already derived from selected model above
 
-# --- Get avg distance driven per day for that province (use CarUsage or fallback)
+# Get avg distance driven per day for that province (use CarUsage or fallback)
 try:
     cu = load_car_usage()
     dist_per_day = cu[{"Province": province}]  # returns DataFrame
@@ -226,7 +224,7 @@ try:
 except Exception:
     avg_distance = 30
 
-# --- Custom charging profiles -----------------------------------------------
+# ─────── Custom charging profiles ───────────────────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("Charging profiles")
 home_only = st.sidebar.checkbox("Home only", value=False)
 work_only = st.sidebar.checkbox("Work only", value=False)
@@ -245,7 +243,8 @@ else:
 
 work_share = 1.0 - home_share
 
-with st.container():
+# ────── Home and work arrival distributions ────────────────────────────────────────────────────────────────────────────────────
+with st.container(border=True):
     st.subheader("Home arrival distribution (editable)")
     col1, col2, col3 = st.columns(3)
     home_mu = col1.number_input(
@@ -263,21 +262,23 @@ with st.container():
         step=0.5,
     )
     home_speed = col3.number_input("Home charger speed (kW)", value=7.2)
-
-    home_prof_default = gaussian_profile(home_mu, home_sigma, n_res)
-    home_df = profile_df(home_prof_default)
-    edited_home = st.data_editor(
-        home_df,
-        num_rows="fixed",
-        column_config={
-            "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
-        },
-        key="home_profile",
-        use_container_width=True,
-    )
-    edited_home["Prob"] = edited_home["Prob"].clip(lower=0)
-    edited_home["Prob"] = edited_home["Prob"] / edited_home["Prob"].sum()
-    home_profile = edited_home["Prob"].to_numpy()
+    
+    # Dataframe to directly change prob distribution
+    with st.expander("Afficher / masquer le DataFrame", expanded=False):
+        home_prof_default = gaussian_profile(home_mu, home_sigma, n_res)
+        home_df = profile_df(home_prof_default)
+        edited_home = st.data_editor(
+            home_df,
+            num_rows="fixed",
+            column_config={
+                "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
+            },
+            key="home_profile",
+            use_container_width=True,
+        )
+        edited_home["Prob"] = edited_home["Prob"].clip(lower=0)
+        edited_home["Prob"] = edited_home["Prob"] / edited_home["Prob"].sum()
+        home_profile = edited_home["Prob"].to_numpy()
 
     st.altair_chart(
         alt.Chart(edited_home)
@@ -287,7 +288,7 @@ with st.container():
         use_container_width=True,
     )
 
-with st.container():
+with st.container(border=True):
     st.subheader("Work arrival distribution (editable)")
     col1, col2, col3 = st.columns(3)
     work_mu = col1.number_input(
@@ -305,21 +306,21 @@ with st.container():
         step=0.5,
     )
     work_speed = col3.number_input("Work charger speed (kW)", value=11.0)
-
-    work_prof_default = gaussian_profile(work_mu, work_sigma, n_res)
-    work_df = profile_df(work_prof_default)
-    edited_work = st.data_editor(
-        work_df,
-        num_rows="fixed",
-        column_config={
-            "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
-        },
-        key="work_profile",
-        use_container_width=True,
-    )
-    edited_work["Prob"] = edited_work["Prob"].clip(lower=0)
-    edited_work["Prob"] = edited_work["Prob"] / edited_work["Prob"].sum()
-    work_profile = edited_work["Prob"].to_numpy()
+    with st.expander("Afficher / masquer le DataFrame", expanded=False):
+        work_prof_default = gaussian_profile(work_mu, work_sigma, n_res)
+        work_df = profile_df(work_prof_default)
+        edited_work = st.data_editor(
+            work_df,
+            num_rows="fixed",
+            column_config={
+                "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
+            },
+            key="work_profile",
+            use_container_width=True,
+        )
+        edited_work["Prob"] = edited_work["Prob"].clip(lower=0)
+        edited_work["Prob"] = edited_work["Prob"] / edited_work["Prob"].sum()
+        work_profile = edited_work["Prob"].to_numpy()
 
     st.altair_chart(
         alt.Chart(edited_work)
@@ -330,10 +331,7 @@ with st.container():
     )
 
 
-
-
-
-# --- Compute charging cars and electric demand ------------------------------
+# ────── Compute charging cars and electric demand ────────────────────────────────────────────────────────────────────────────────────
 minutes_per_slot = 1440 // n_res
 time_bins = [
     f"{(i * minutes_per_slot) // 60:02d}:{(i * minutes_per_slot) % 60:02d}"
@@ -379,7 +377,7 @@ power_df = pd.DataFrame({
 })
 power_df["Total_kW"] = power_df["Home_kW"] + power_df["Work_kW"]
 
-# --- Demonstrate aggregate_power utility ---------------------------------
+# ─────── Demonstrate aggregate_power utility ─────────────────────────────────────────────────────────────────────────────────────────
 arrivals_mat = np.column_stack([
     home_share * car_count * home_profile,
     work_share * car_count * work_profile,
@@ -416,7 +414,6 @@ st.altair_chart(chart_power, use_container_width=True)
 # ── 3 · Canada EV‑share choropleth ──────────────────────────────────────────
 st.header("3 · Provincial EV share (battery‑electric)")
 
-# a) total fleet per province (light‑duty only, all fuels)
 fleet_total = (
     fleet_df[
         (fleet_df["Fuel Type"] == "All fuel types") &
@@ -425,7 +422,6 @@ fleet_total = (
     .groupby("Province")["Vehicles nb"].sum()
 )
 
-# b) BEV stock per province (battery‑electric)
 bev_total = (
     fleet_df[
         (fleet_df["Fuel Type"] == "Battery‑electric") &
@@ -436,16 +432,11 @@ bev_total = (
 
 ev_share = (bev_total / fleet_total * 100).fillna(0).round(2)  # %
 
-# inject into GeoJSON
 for feat in canada_geo["features"]:
     prov_name = feat["properties"]["name"].replace("Province of ", "")
     feat["properties"]["ev_share"] = ev_share.get(prov_name, 0.0)
 
-
-
-# build folium map
 m = folium.Map(location=[56.3, -96], zoom_start=4, tiles="cartodbpositron")
-
 folium.Choropleth(
     geo_data=canada_geo,
     name="EV share",
