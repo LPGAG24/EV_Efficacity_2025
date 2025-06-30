@@ -16,8 +16,12 @@ from carUsage        import CarUsage
 from data_prep_canada import fetch_statcan_fleet, download_ckan_resource
 
 
-def gaussian_profile(mu: float, sigma: float, n: int = 48) -> np.ndarray:
-    """Return a normalised 30‑min profile centred on ``mu`` hours."""
+# resolution (number of slots in a 24 h day)
+n_res = 48
+
+
+def gaussian_profile(mu: float, sigma: float, n: int) -> np.ndarray:
+    """Return a normalised profile with ``n`` slots centred on ``mu`` hours."""
     t = np.linspace(0, 24, n, endpoint=False)
     prof = np.exp(-((t - mu) ** 2) / (2 * sigma * sigma))
     prof[prof < 0] = 0
@@ -39,6 +43,17 @@ canada_geo = load_canada_geojson()
 
 # ── Sidebar controls ────────────────────────────────────────────────────────
 st.sidebar.title("Filters")
+
+# choose resolution (must divide 1440 min)
+n_res = int(
+    st.sidebar.number_input(
+        "Time resolution (#slots per day)",
+        min_value=24,
+        max_value=288,
+        step=24,
+        value=n_res,
+    )
+)
 
 # 1) Province chooser
 
@@ -252,23 +267,25 @@ else:
 
 work_share = 1.0 - home_share
 
-home_profile = gaussian_profile(home_mu, home_sigma)
-work_profile = gaussian_profile(work_mu, work_sigma)
+home_profile = gaussian_profile(home_mu, home_sigma, n_res)
+work_profile = gaussian_profile(work_mu, work_sigma, n_res)
 
 
 
 
 
 # ── 1 · profils initiaux (gaussienne) ───────────────────────────────
-home_prof_default = gaussian_profile(home_mu, home_sigma)   # ndarray 48×1
-work_prof_default = gaussian_profile(work_mu, work_sigma)
+home_prof_default = gaussian_profile(home_mu, home_sigma, n_res)
+work_prof_default = gaussian_profile(work_mu, work_sigma, n_res)
 
 # helper : fabrique un DataFrame Time/Prob pour l’éditeur
 def profile_df(prof: np.ndarray) -> pd.DataFrame:
-    return pd.DataFrame({
-        "Time": [f"{i//2:02d}:{'30' if i%2 else '00'}" for i in range(48)],
-        "Prob": prof,
-    })
+    minutes_per_slot = 1440 // n_res
+    times = [
+        f"{(i * minutes_per_slot) // 60:02d}:{(i * minutes_per_slot) % 60:02d}"
+        for i in range(n_res)
+    ]
+    return pd.DataFrame({"Time": times, "Prob": prof})
 
 # ── 2 · Home — data_editor + renormalisation ───────────────────────
 st.sidebar.subheader("Home arrival distribution (editable)")
@@ -328,8 +345,12 @@ st.altair_chart(
 
 
 # --- Compute charging cars and electric demand ------------------------------
-time_bins = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 30)]
-slot_len = 0.5
+minutes_per_slot = 1440 // n_res
+time_bins = [
+    f"{(i * minutes_per_slot) // 60:02d}:{(i * minutes_per_slot) % 60:02d}"
+    for i in range(n_res)
+]
+slot_len = 24 / n_res
 n_slots = max(1, int(recharge_time / slot_len))
 
 home_conv = np.convolve(home_profile, np.ones(n_slots), mode="same")
