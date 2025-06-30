@@ -316,8 +316,7 @@ with st.container(border=True):
         edited_home["Prob"] = edited_home["Prob"] / edited_home["Prob"].sum()
         home_profile = edited_home["Prob"].to_numpy()
 
-    st.altair_chart(
-        alt.Chart(edited_home)
+
     st.altair_chart(
         alt.Chart(edited_home)
         .mark_bar()
@@ -325,8 +324,7 @@ with st.container(border=True):
         .properties(title="Home arrival distribution", width=700, height=250),
         use_container_width=True,
     )
-        use_container_width=True,
-    )
+
 
 with st.container(border=True):
     st.subheader("Work arrival distribution (editable)")
@@ -362,8 +360,7 @@ with st.container(border=True):
         edited_work["Prob"] = edited_work["Prob"] / edited_work["Prob"].sum()
         work_profile = edited_work["Prob"].to_numpy()
 
-    st.altair_chart(
-        alt.Chart(edited_work)
+
     st.altair_chart(
         alt.Chart(edited_work)
         .mark_bar()
@@ -371,8 +368,7 @@ with st.container(border=True):
         .properties(title="Work arrival distribution", width=700, height=250),
         use_container_width=True,
     )
-        use_container_width=True,
-    )
+
 
 
 
@@ -438,7 +434,7 @@ power_df["Agg_kW"] = aggregate_power(arrivals_mat, kernels)
 power_long = power_df.melt(id_vars="Time", value_vars=["Home_kW", "Work_kW"],
                            var_name="Source", value_name="kW")
 
-area_chart = alt.Chart(power_long).mark_area(opacity=0.7).encode(
+
 
 area_chart = alt.Chart(power_long).mark_area(opacity=0.7).encode(
     x=alt.X('Time', sort=None),
