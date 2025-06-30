@@ -27,6 +27,16 @@ def gaussian_profile(mu: float, sigma: float, n: int) -> np.ndarray:
     prof[prof < 0] = 0
     return prof / prof.sum()
 
+
+def profile_df(prof: np.ndarray) -> pd.DataFrame:
+    """Helper to build a Time/Prob DataFrame for editing profiles."""
+    minutes_per_slot = 1440 // n_res
+    times = [
+        f"{(i * minutes_per_slot) // 60:02d}:{(i * minutes_per_slot) % 60:02d}"
+        for i in range(n_res)
+    ]
+    return pd.DataFrame({"Time": times, "Prob": prof})
+
 st.set_page_config(page_title="EV & Hybrid Dashboard", layout="wide")
 
 # ── GeoJSON helper ──────────────────────────────────────────────────────────
@@ -218,38 +228,6 @@ except Exception:
 
 # --- Custom charging profiles -----------------------------------------------
 st.sidebar.header("Charging profiles")
-home_mu = st.sidebar.number_input(
-    "Home peak hour",
-    min_value=0.0,
-    max_value=23.5,
-    value=18.0,
-    step=0.5,
-)
-home_sigma = st.sidebar.number_input(
-    "Home σ",
-    min_value=0.5,
-    max_value=5.0,
-    value=2.0,
-    step=0.5,
-)
-work_mu = st.sidebar.number_input(
-    "Work peak hour",
-    min_value=0.0,
-    max_value=23.5,
-    value=9.0,
-    step=0.5,
-)
-work_sigma = st.sidebar.number_input(
-    "Work σ",
-    min_value=0.5,
-    max_value=5.0,
-    value=2.0,
-    step=0.5,
-)
-
-home_speed = st.sidebar.number_input("Home charger speed (kW)", value=7.2)
-work_speed = st.sidebar.number_input("Work charger speed (kW)", value=11.0)
-
 home_only = st.sidebar.checkbox("Home only", value=False)
 work_only = st.sidebar.checkbox("Work only", value=False)
 if home_only:
@@ -267,78 +245,89 @@ else:
 
 work_share = 1.0 - home_share
 
-home_profile = gaussian_profile(home_mu, home_sigma, n_res)
-work_profile = gaussian_profile(work_mu, work_sigma, n_res)
+with st.container():
+    st.subheader("Home arrival distribution (editable)")
+    col1, col2, col3 = st.columns(3)
+    home_mu = col1.number_input(
+        "Home peak hour",
+        min_value=0.0,
+        max_value=23.5,
+        value=18.0,
+        step=0.5,
+    )
+    home_sigma = col2.number_input(
+        "Home σ",
+        min_value=0.5,
+        max_value=5.0,
+        value=2.0,
+        step=0.5,
+    )
+    home_speed = col3.number_input("Home charger speed (kW)", value=7.2)
 
+    home_prof_default = gaussian_profile(home_mu, home_sigma, n_res)
+    home_df = profile_df(home_prof_default)
+    edited_home = st.data_editor(
+        home_df,
+        num_rows="fixed",
+        column_config={
+            "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
+        },
+        key="home_profile",
+        use_container_width=True,
+    )
+    edited_home["Prob"] = edited_home["Prob"].clip(lower=0)
+    edited_home["Prob"] = edited_home["Prob"] / edited_home["Prob"].sum()
+    home_profile = edited_home["Prob"].to_numpy()
 
-
-
-
-# ── 1 · profils initiaux (gaussienne) ───────────────────────────────
-home_prof_default = gaussian_profile(home_mu, home_sigma, n_res)
-work_prof_default = gaussian_profile(work_mu, work_sigma, n_res)
-
-# helper : fabrique un DataFrame Time/Prob pour l’éditeur
-def profile_df(prof: np.ndarray) -> pd.DataFrame:
-    minutes_per_slot = 1440 // n_res
-    times = [
-        f"{(i * minutes_per_slot) // 60:02d}:{(i * minutes_per_slot) % 60:02d}"
-        for i in range(n_res)
-    ]
-    return pd.DataFrame({"Time": times, "Prob": prof})
-
-# ── 2 · Home — data_editor + renormalisation ───────────────────────
-st.sidebar.subheader("Home arrival distribution (editable)")
-home_df = profile_df(home_prof_default)
-
-edited_home = st.data_editor(
-    home_df,
-    num_rows="fixed",
-    column_config={
-        "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
-    },
-    key="home_profile",            # clé pour conserver l’édition
-    use_container_width=True,
-)
-
-edited_home["Prob"] = edited_home["Prob"].clip(lower=0)
-edited_home["Prob"] = edited_home["Prob"] / edited_home["Prob"].sum()
-home_profile = edited_home["Prob"].to_numpy()          # ← vecteur final
-
-st.altair_chart(
-    alt.Chart(edited_home)
+    st.altair_chart(
+        alt.Chart(edited_home)
         .mark_bar()
         .encode(x="Time", y="Prob")
         .properties(title="Home arrival distribution", width=700, height=250),
-    use_container_width=True,
-)
+        use_container_width=True,
+    )
 
-# ── 3 · Work — même logique ─────────────────────────────────────────
-st.sidebar.subheader("Work arrival distribution (editable)")
-work_df = profile_df(work_prof_default)
+with st.container():
+    st.subheader("Work arrival distribution (editable)")
+    col1, col2, col3 = st.columns(3)
+    work_mu = col1.number_input(
+        "Work peak hour",
+        min_value=0.0,
+        max_value=23.5,
+        value=9.0,
+        step=0.5,
+    )
+    work_sigma = col2.number_input(
+        "Work σ",
+        min_value=0.5,
+        max_value=5.0,
+        value=2.0,
+        step=0.5,
+    )
+    work_speed = col3.number_input("Work charger speed (kW)", value=11.0)
 
-edited_work = st.data_editor(
-    work_df,
-    num_rows="fixed",
-    column_config={
-        "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
-    },
-    key="work_profile",
-    use_container_width=True,
-)
+    work_prof_default = gaussian_profile(work_mu, work_sigma, n_res)
+    work_df = profile_df(work_prof_default)
+    edited_work = st.data_editor(
+        work_df,
+        num_rows="fixed",
+        column_config={
+            "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
+        },
+        key="work_profile",
+        use_container_width=True,
+    )
+    edited_work["Prob"] = edited_work["Prob"].clip(lower=0)
+    edited_work["Prob"] = edited_work["Prob"] / edited_work["Prob"].sum()
+    work_profile = edited_work["Prob"].to_numpy()
 
-edited_work["Prob"] = edited_work["Prob"].clip(lower=0)
-edited_work["Prob"] = edited_work["Prob"] / edited_work["Prob"].sum()
-work_profile = edited_work["Prob"].to_numpy()
-
-st.altair_chart(
-    alt.Chart(edited_work)
+    st.altair_chart(
+        alt.Chart(edited_work)
         .mark_bar()
         .encode(x="Time", y="Prob")
         .properties(title="Work arrival distribution", width=700, height=250),
-    use_container_width=True,
-)
-
+        use_container_width=True,
+    )
 
 
 
