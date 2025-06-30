@@ -40,15 +40,6 @@ def profile_df(prof: np.ndarray) -> pd.DataFrame:
     return pd.DataFrame({"Time": times, "Prob": prof})
 
 
-def profile_df(prof: np.ndarray) -> pd.DataFrame:
-    """Helper to build a Time/Prob DataFrame for editing profiles."""
-    minutes_per_slot = 1440 // n_res
-    times = [
-        f"{(i * minutes_per_slot) // 60:02d}:{(i * minutes_per_slot) % 60:02d}"
-        for i in range(n_res)
-    ]
-    return pd.DataFrame({"Time": times, "Prob": prof})
-
 st.set_page_config(page_title="EV & Hybrid Dashboard", layout="wide")
 
 # ── GeoJSON helper (get number of cars)─────────────────────────────────────────────────────────────────────────────────────────────
@@ -65,17 +56,6 @@ canada_geo = load_canada_geojson()
 
 # ── Sidebar controls ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 st.sidebar.title("Filters")
-
-# choose resolution (must divide 1440 min)
-n_res = int(
-    st.sidebar.number_input(
-        "Time resolution (#slots per day)",
-        min_value=24,
-        max_value=288,
-        step=24,
-        value=n_res,
-    )
-)
 
 # choose resolution (must divide 1440 min)
 n_res = int(
@@ -117,7 +97,8 @@ selected_types = []
 @st.cache_resource
 def get_dist(fleet_df, province):
     # fast: in-memory DataFrame processing
-    return CarDistribution(fleet_df, Province=province)
+    if province:
+        return CarDistribution(fleet_df, Province=province)
 dist = get_dist(fleet_df, province)
 
 
