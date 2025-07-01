@@ -88,6 +88,8 @@ fleet_df = load_fleet()
 
 provinces = sorted(fleet_df["Province"].unique())
 province  = st.sidebar.multiselect("Province", provinces, default=["Canada"])
+if not province:
+    province = ["Canada"]
 
 # 2) Vehicle‑class multiselect (for efficiency tables)
 selected_types = []
@@ -97,8 +99,9 @@ selected_types = []
 @st.cache_resource
 def get_dist(fleet_df, province):
     # fast: in-memory DataFrame processing
-    if province:
-        return CarDistribution(fleet_df, Province=province)
+    if not province:
+        province = ["Canada"]
+    return CarDistribution(fleet_df, Province=province)
 dist = get_dist(fleet_df, province)
 
 
