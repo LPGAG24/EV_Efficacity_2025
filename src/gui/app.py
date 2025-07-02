@@ -403,18 +403,32 @@ cars_df = pd.DataFrame({
 })
 cars_df["Total_cars"] = cars_df["Home_cars"] + cars_df["Work_cars"]
 
-cars_long = cars_df.melt(id_vars="Time", value_vars=["Home_cars", "Work_cars"],
-                         var_name="Source", value_name="Cars")
-chart_cars = alt.Chart(cars_long).mark_area(opacity=0.7).encode(
-    x=alt.X('Time', sort=None),
-    y=alt.Y('Cars', stack=None),
-    color='Source'
-).properties(
-    title=f"Daily number of Charging cars ({province}, "
-           f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
-    width=900,
-    height=350
+rename = {"Home_cars": "Level 1 Charger", "Work_cars": "level 2 Charger"}
+cars_long = cars_df.rename(columns=rename).melt(
+    id_vars="Time", value_vars=["Level 1 Charger", "level 2 Charger"],
+    var_name="Source", value_name="Cars"
 )
+chart_cars = (
+    alt.Chart(cars_long)
+    .mark_area(opacity=0.7)
+    .encode(
+        x=alt.X("Time", sort=None),
+        y=alt.Y("Cars", stack=None),
+        color=alt.Color(
+            "Source:N",                      # le :N précise « nominal »
+            title="Charging location"        # titre de la légende
+            # éventuel mapping de couleurs ⇩
+            # scale=alt.Scale(domain=["Home","Work"], range=["#1f77b4","#ff7f0e"])
+        ),
+    )
+    .properties(
+        title=f"Daily number of cars state ({province}, "
+              f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
+        width=900,
+        height=350,
+    )
+)
+
 st.altair_chart(chart_cars, use_container_width=True)
 
 power_home = home_cars * home_speed
@@ -443,13 +457,13 @@ power_long = power_df.melt(id_vars="Time", value_vars=["Home_kW", "Work_kW"],
 
 
 
-area_chart = alt.Chart(power_long).mark_area(opacity=0.7).encode(
+area_chart = alt.Chart(power_long).mark_line(color='blue').encode(
     x=alt.X('Time', sort=None),
     y=alt.Y('kW', stack=None),
     color='Source'
 )
 
-line_chart = alt.Chart(power_df).mark_line(color='black').encode(
+line_chart = alt.Chart(power_df).mark_area(opacity=0.5).encode(
     x='Time',
     y='Agg_kW'
 )
@@ -457,7 +471,7 @@ line_chart = alt.Chart(power_df).mark_line(color='black').encode(
 chart_power = (area_chart + line_chart).properties(
 )
 
-line_chart = alt.Chart(power_df).mark_line(color='black').encode(
+line_chart = alt.Chart(power_df).mark_area(opacity=0.5).encode(
     x='Time',
     y='Agg_kW'
 )
