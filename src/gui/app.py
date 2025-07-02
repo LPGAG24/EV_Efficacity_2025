@@ -78,6 +78,17 @@ def profile_df(prof: np.ndarray) -> pd.DataFrame:
     ]
     return pd.DataFrame({"Time": times, "Prob": prof})
 
+def compute_time_bins(resolution: int, recharge_time: float) -> tuple[list[str], int, float]:
+    """Return time bin labels and slot parameters for a given resolution."""
+    minutes_per_slot = 1440 // resolution
+    time_bins = [
+        f"{(i * minutes_per_slot) // 60:02d}:{(i * minutes_per_slot) % 60:02d}"
+        for i in range(resolution)
+    ]
+    slot_len = 24 / resolution
+    n_slots = max(1, int(recharge_time / slot_len))
+    return time_bins, n_slots, slot_len
+
 def sync_from_slot():
     """Quand l'utilisateur modifie slot_minutes, on met n_res à jour."""
     st.session_state["n_res"] = 1440 // st.session_state["slot_minutes"]
@@ -234,20 +245,43 @@ with st.container():
         st.table(dist.get_fuel_type())
 
         st.subheader("Vehicle‑type mix")
-        st.table(dist.get_fuel_type_percent_by_vehicle(selected_types))
+        vt_df = dist.get_fuel_type_percent_by_vehicle(selected_types).reset_index()
+        vt_df.columns = ["Vehicle Type", "Percent"]
+        edited_vt = st.data_editor(vt_df, num_rows="dynamic")
+        total_pct = edited_vt["Percent"].sum()
+        if total_pct < 100:
+            diff = 100 - total_pct
+            mask = edited_vt["Vehicle Type"] == "Other"
+            if mask.any():
+                edited_vt.loc[mask, "Percent"] += diff
+            else:
+                edited_vt = edited_vt.append({"Vehicle Type": "Other", "Percent": diff}, ignore_index=True)
+        elif total_pct > 100:
+            st.warning("Vehicle type percentages exceed 100%")
+        st.table(edited_vt)
 
     with col2:
-        st.header("2 · Efficiency (kWh/100 km)")
+        st.header("2 · Efficiency (kWh/100 km) and Battery size")
         tab1, tab2 = st.tabs(["⚡ Chart", "DataFrame"])
         electric_eff.set_efficiency_by_type(selected_types)
+        electric_eff.set_battery_by_type(selected_types)
         df_e = electric_eff.efficiency_by_vehicle_type
+        df_b = electric_eff.battery_by_vehicle_type
+        df_merge = df_e.merge(df_b, on="Vehicle class")
         chart_df = (
-            df_e[["Vehicle class", "Combined (Le/100 km)"]]
+            df_merge[["Vehicle class", "Combined (Le/100 km)", "Battery_kWh"]]
                 .set_index("Vehicle class")          # x-axis
                 .sort_index()                        # optional: alphabetic order
         )
         tab1.bar_chart(chart_df, use_container_width=True)
-        tab2.dataframe(df_e, use_container_width=True)
+        tab2.dataframe(df_merge, use_container_width=True)
+
+        st.sidebar.subheader("Battery size (kWh)")
+        battery_inputs = {}
+        for _, row in df_b.iterrows():
+            battery_inputs[row["Vehicle class"]] = st.sidebar.number_input(
+                row["Vehicle class"], value=float(row["Battery_kWh"]), step=1.0
+            )
 
 # --- Sidebar: user selects day and vehicle class
 day_choices = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -282,22 +316,23 @@ except Exception:
 
 # ─────── Custom charging profiles ───────────────────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("Charging profiles")
-home_only = st.sidebar.checkbox("Home only", value=False)
-work_only = st.sidebar.checkbox("Work only", value=False)
-if home_only:
-    home_share = 1.0
-elif work_only:
-    home_share = 0.0
-else:
-    home_share = st.sidebar.number_input(
-        "Home charging %",
-        min_value=0,
-        max_value=100,
-        value=70,
-        step=1,
-    ) / 100
+home_share_input = st.sidebar.number_input(
+    "Home charging %", min_value=0, max_value=100, value=60, step=1
+)
+work_share_input = st.sidebar.number_input(
+    "Work charging %", min_value=0, max_value=100, value=30, step=1
+)
 
-work_share = 1.0 - home_share
+total_share = home_share_input + work_share_input
+if total_share > 100:
+    st.sidebar.warning("Home + Work share exceeds 100%")
+
+custom_share = max(0, 100 - total_share)
+st.sidebar.markdown(f"Custom charging %: {custom_share}")
+
+home_share = home_share_input / 100
+work_share = work_share_input / 100
+custom_share = custom_share / 100
 
 # ────── Home and work arrival distributions ────────────────────────────────────────────────────────────────────────────────────
 # ── Home arrival distribution ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -376,31 +411,60 @@ with st.container(border=True):
     # ── Graphe de distribution ────────────────────────────────────────────────
     st.altair_chart(alt.Chart(edited_work).mark_bar().encode(x="Time", y="Prob").properties(title="Work arrival distribution", width=700, height=250),use_container_width=True,)
 
+# ── Custom arrival distribution ─────────────────────────────────────────────
+with st.container(border=True):
+    st.subheader("Custom arrival distribution (editable)")
+    custom_mu = st.number_input("Custom peak hour", 0.0, 23.5, value=12.0, step=0.5)
+    custom_sigma = st.number_input("Custom σ", 0.1, 10.0, value=2.0, step=0.1)
+    custom_speed = st.number_input("Custom charger speed (kW)", value=7.2)
+    custom_default = gaussian_profile(custom_mu, custom_sigma, n_res)
+    with st.expander("Afficher / masquer le DataFrame", expanded=False):
+        custom_df = profile_df(custom_default)
+        edited_custom = st.data_editor(
+            custom_df,
+            num_rows="fixed",
+            column_config={"Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)},
+            key="custom_profile",
+            use_container_width=True,
+        )
+        edited_custom["Prob"] = edited_custom["Prob"].clip(lower=0)
+        edited_custom["Prob"] = edited_custom["Prob"] / edited_custom["Prob"].sum()
+        custom_profile = edited_custom["Prob"].to_numpy()
+
+    st.altair_chart(
+        alt.Chart(edited_custom).mark_bar().encode(x="Time", y="Prob").properties(
+            title="Custom arrival distribution", width=700, height=250
+        ),
+        use_container_width=True,
+    )
+
 # --- Compute charging cars and electric demand ------------------------------
-minutes_per_slot = 1440 // n_res
-time_bins = [
-    f"{(i * minutes_per_slot) // 60:02d}:{(i * minutes_per_slot) % 60:02d}"
-    for i in range(n_res)
-]
-slot_len = 24 / n_res
-n_slots = max(1, int(recharge_time / slot_len))
+time_bins, n_slots, slot_len = compute_time_bins(n_res, recharge_time)
 
 home_conv = np.convolve(home_profile, np.ones(n_slots), mode="same")
 work_conv = np.convolve(work_profile, np.ones(n_slots), mode="same")
+custom_conv = np.convolve(custom_profile, np.ones(n_slots), mode="same")
 
 home_cars = home_share * car_count * home_conv
 work_cars = work_share * car_count * work_conv
+custom_cars = custom_share * car_count * custom_conv
 
 cars_df = pd.DataFrame({
     "Time": time_bins,
     "Home_cars": home_cars,
     "Work_cars": work_cars,
+    "Custom_cars": custom_cars,
 })
-cars_df["Total_cars"] = cars_df["Home_cars"] + cars_df["Work_cars"]
+cars_df["Total_cars"] = cars_df[["Home_cars", "Work_cars", "Custom_cars"]].sum(axis=1)
 
-rename = {"Home_cars": "Level 1 Charger", "Work_cars": "Level 2 Charger"}
+rename = {
+    "Home_cars": "Level 1 Charger",
+    "Work_cars": "Level 2 Charger",
+    "Custom_cars": "Custom",
+}
 cars_long = cars_df.rename(columns=rename).melt(
-    id_vars="Time", value_vars=["Level 1 Charger", "Level 2 Charger"],
+    id_vars="Time",
+    value_vars=["Level 1 Charger", "Level 2 Charger", "Custom"],
     var_name="Source", value_name="Cars"
 )
 chart_cars = (
@@ -414,22 +478,30 @@ st.altair_chart(chart_cars, use_container_width=True)
 
 power_home = home_cars * home_speed
 power_work = work_cars * work_speed
+power_custom = custom_cars * custom_speed
 
-power_df = pd.DataFrame({"Time": time_bins, "Home_kW": power_home, "Work_kW": power_work,})
-power_df["Total_kW"] = power_df["Home_kW"] + power_df["Work_kW"]
+power_df = pd.DataFrame({
+    "Time": time_bins,
+    "Home_kW": power_home,
+    "Work_kW": power_work,
+    "Custom_kW": power_custom,
+})
+power_df["Total_kW"] = power_df[["Home_kW", "Work_kW", "Custom_kW"]].sum(axis=1)
 
 # ── Aggregate power demand ─────────────────────────────────────────────────────────────────────────────────────────────────────
 arrivals_mat = np.column_stack([
     home_share * car_count * home_profile,
     work_share * car_count * work_profile,
+    custom_share * car_count * custom_profile,
 ])
 kernels = np.column_stack([
     np.full(n_slots, home_speed),
     np.full(n_slots, work_speed),
+    np.full(n_slots, custom_speed),
 ])
 power_df["Agg_kW"] = aggregate_power(arrivals_mat, kernels)
 
-power_long = power_df.melt(id_vars="Time", value_vars=["Home_kW", "Work_kW"],
+power_long = power_df.melt(id_vars="Time", value_vars=["Home_kW", "Work_kW", "Custom_kW"],
                            var_name="Source", value_name="kW")
 
 
@@ -443,6 +515,15 @@ line_chart = alt.Chart(power_df).mark_area(opacity=0.5).encode(x='Time', y='Agg_
 
 chart_power = (area_chart + line_chart).properties(title=f"Electric demand ({province}, "f"{selected_types if selected_types is not None else 'Average'} Vehicle)", width=900, height=350)
 st.altair_chart(chart_power, use_container_width=True)
+
+# --- Weekly energy graph -----------------------------------------------------
+slot_hours = slot_len
+daily_energy = (power_df["Agg_kW"] * slot_hours).sum()
+week_days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+weekly_df = pd.DataFrame({"Day": week_days, "Energy_kWh": [daily_energy]*7})
+weekly_chart = alt.Chart(weekly_df).mark_bar().encode(x="Day", y="Energy_kWh")\
+    .properties(title="Weekly electric consumption", width=700, height=300)
+st.altair_chart(weekly_chart, use_container_width=True)
 
 
 # ── 3 · Canada EV‑share choropleth ──────────────────────────────────────────
