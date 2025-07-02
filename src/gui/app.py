@@ -78,6 +78,14 @@ def profile_df(prof: np.ndarray) -> pd.DataFrame:
     ]
     return pd.DataFrame({"Time": times, "Prob": prof})
 
+def sync_from_slot():
+    """Quand l'utilisateur modifie slot_minutes, on met n_res à jour."""
+    st.session_state["n_res"] = 1440 // st.session_state["slot_minutes"]
+
+def sync_from_nres():
+    """Quand l'utilisateur modifie n_res, on met slot_minutes à jour."""
+    st.session_state["slot_minutes"] = 1440 // st.session_state["n_res"]
+
 
 st.set_page_config(page_title="EV & Hybrid Dashboard", layout="wide")
 
@@ -96,28 +104,17 @@ canada_geo = load_canada_geojson()
 # ── Sidebar controls ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 st.sidebar.title("Filters")
 
-# choose resolution (must divide 1440 min)
-n_res = int(
-    st.sidebar.number_input(
-        "Time resolution (#slots per day)",
-        min_value=24,
-        max_value=288,
-        step=24,
-        value=n_res,
-    )
-)
+SLOT_MINUTES_OPTIONS = [60, 30, 15, 10, 5, 2, 1]
+N_RES_OPTIONS        = [1440 // m for m in SLOT_MINUTES_OPTIONS]   # [24,48,96,…]
+N_RES_DEFAULT = 2
 
-slot_minutes_options = [60, 30, 15, 10, 5, 2, 1]
-slot_minutes = st.sidebar.selectbox(
-    "Durée d’un créneau (min)",
-    slot_minutes_options,
-    index=1,                       # valeur par défaut 30 min
-    format_func=lambda x: f"{x:g} min"
-)
+st.sidebar.selectbox("Durée d’un créneau (min)", SLOT_MINUTES_OPTIONS, index=N_RES_DEFAULT, key="slot_minutes", format_func=lambda x: f"{x:g} min", on_change=sync_from_slot)
+st.sidebar.selectbox("Nombre de créneaux par jour", N_RES_OPTIONS, index=N_RES_DEFAULT, key="n_res", on_change=sync_from_nres)
 
-n_res = int(24 * 60 / slot_minutes)   # 24 h × 60 / durée d’un créneau
-st.sidebar.write(f"→ {n_res} créneaux par jour")
+slot_minutes = st.session_state.slot_minutes
+n_res        = st.session_state.n_res    # ← voilà « n_res » pour la suite
 
+st.sidebar.markdown(f"**Sélection actuelle** : {n_res} créneaux × {slot_minutes} min = 1 440 min")
 
 @st.cache_data
 def load_fleet():
@@ -379,8 +376,6 @@ with st.container(border=True):
     # ── Graphe de distribution ────────────────────────────────────────────────
     st.altair_chart(alt.Chart(edited_work).mark_bar().encode(x="Time", y="Prob").properties(title="Work arrival distribution", width=700, height=250),use_container_width=True,)
 
-
-
 # --- Compute charging cars and electric demand ------------------------------
 minutes_per_slot = 1440 // n_res
 time_bins = [
@@ -411,22 +406,8 @@ cars_long = cars_df.rename(columns=rename).melt(
 chart_cars = (
     alt.Chart(cars_long)
     .mark_area(opacity=0.7)
-    .encode(
-        x=alt.X("Time", sort=None),
-        y=alt.Y("Cars", stack=None),
-        color=alt.Color(
-            "Source:N",                      # le :N précise « nominal »
-            title="Charging location"        # titre de la légende
-            # éventuel mapping de couleurs ⇩
-            # scale=alt.Scale(domain=["Home","Work"], range=["#1f77b4","#ff7f0e"])
-        ),
-    )
-    .properties(
-        title=f"Daily number of cars state ({province}, "
-              f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
-        width=900,
-        height=350,
-    )
+    .encode(x=alt.X("Time", sort=None), y=alt.Y("Cars", stack=None), color=alt.Color("Source:N", title="Charging location"))
+    .properties(title=f"Daily number of cars state ({province}, " f"{selected_types if selected_types is not None else 'Average'} Vehicle)", width=900, height=350)
 )
 
 st.altair_chart(chart_cars, use_container_width=True)
@@ -434,14 +415,10 @@ st.altair_chart(chart_cars, use_container_width=True)
 power_home = home_cars * home_speed
 power_work = work_cars * work_speed
 
-power_df = pd.DataFrame({
-    "Time": time_bins,
-    "Home_kW": power_home,
-    "Work_kW": power_work,
-})
+power_df = pd.DataFrame({"Time": time_bins, "Home_kW": power_home, "Work_kW": power_work,})
 power_df["Total_kW"] = power_df["Home_kW"] + power_df["Work_kW"]
 
-# ─────── Demonstrate aggregate_power utility ─────────────────────────────────────────────────────────────────────────────────────────
+# ── Aggregate power demand ─────────────────────────────────────────────────────────────────────────────────────────────────────
 arrivals_mat = np.column_stack([
     home_share * car_count * home_profile,
     work_share * car_count * work_profile,
@@ -456,32 +433,15 @@ power_long = power_df.melt(id_vars="Time", value_vars=["Home_kW", "Work_kW"],
                            var_name="Source", value_name="kW")
 
 
-
 area_chart = alt.Chart(power_long).mark_line(color='blue').encode(
     x=alt.X('Time', sort=None),
     y=alt.Y('kW', stack=None),
     color='Source'
 )
 
-line_chart = alt.Chart(power_df).mark_area(opacity=0.5).encode(
-    x='Time',
-    y='Agg_kW'
-)
+line_chart = alt.Chart(power_df).mark_area(opacity=0.5).encode(x='Time', y='Agg_kW')
 
-chart_power = (area_chart + line_chart).properties(
-)
-
-line_chart = alt.Chart(power_df).mark_area(opacity=0.5).encode(
-    x='Time',
-    y='Agg_kW'
-)
-
-chart_power = (area_chart + line_chart).properties(
-    title=f"Electric demand ({province}, "
-           f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
-    width=900,
-    height=350
-)
+chart_power = (area_chart + line_chart).properties(title=f"Electric demand ({province}, "f"{selected_types if selected_types is not None else 'Average'} Vehicle)", width=900, height=350)
 st.altair_chart(chart_power, use_container_width=True)
 
 
@@ -512,16 +472,10 @@ for feat in canada_geo["features"]:
 
 m = folium.Map(location=[56.3, -96], zoom_start=4, tiles="cartodbpositron")
 folium.Choropleth(
-    geo_data=canada_geo,
-    name="EV share",
-    data=ev_share.reset_index(),
-    columns=["Province", "Vehicles nb"],
-    key_on="feature.properties.name",
-    fill_color="YlGn",
-    nan_fill_color="#dddddd",
-    fill_opacity=0.7,
-    line_opacity=0.2,
-    legend_name="Battery‑electric share of light‑duty fleet (%)",
+    geo_data=canada_geo, name="EV share", data=ev_share.reset_index(),
+    columns=["Province", "Vehicles nb"], key_on="feature.properties.name",
+    fill_color="YlGn", nan_fill_color="#dddddd", fill_opacity=0.7,
+    line_opacity=0.2, legend_name="Battery‑electric share of light‑duty fleet (%)",
 ).add_to(m)
 
 folium.LayerControl().add_to(m)
