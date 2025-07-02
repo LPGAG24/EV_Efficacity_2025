@@ -403,9 +403,9 @@ cars_df = pd.DataFrame({
 })
 cars_df["Total_cars"] = cars_df["Home_cars"] + cars_df["Work_cars"]
 
-rename = {"Home_cars": "Level 1 Charger", "Work_cars": "level 2 Charger"}
+rename = {"Home_cars": "Level 1 Charger", "Work_cars": "Level 2 Charger"}
 cars_long = cars_df.rename(columns=rename).melt(
-    id_vars="Time", value_vars=["Level 1 Charger", "level 2 Charger"],
+    id_vars="Time", value_vars=["Level 1 Charger", "Level 2 Charger"],
     var_name="Source", value_name="Cars"
 )
 chart_cars = (
