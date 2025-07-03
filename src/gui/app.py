@@ -1,101 +1,22 @@
 # app.py
-import streamlit as st
-import pandas as pd
+import streamlit    as st
+import pandas       as pd
+import numpy        as np
+import altair       as alt
 import urllib.request, json, folium
-from streamlit_folium import st_folium
-import altair as alt
-import numpy as np
-import webbrowser
-from typing import Union
 
-from aggregate_power import aggregate_power
-
-from aggregate_power import aggregate_power
-
-from carDistribution import CarDistribution          # your classes
-from carEfficiency   import CarEfficiency
-from carRecharge     import CarRecharge
-from carUsage        import CarUsage
-from data_prep_canada import fetch_statcan_fleet, download_ckan_resource
+from streamlit_folium   import st_folium
+from aggregate_power    import aggregate_power
+from carDistribution    import *
+from carEfficiency      import *
+from carRecharge        import *
+from carUsage           import *
+from appHelper          import *
+from data_prep_canada   import fetch_statcan_fleet, download_ckan_resource
 
 
 # resolution (number of slots in a 24 h day)
 n_res = 48
-
-
-def gaussian_profile(
-    mu: float,  sigma_left: Union[int, float],
-    n: int,     sigma_right: Union[int, float] = 0,
-) -> np.ndarray:
-    """
-    Profil gaussien circulaire (24 h) éventuellement asymétrique.
-
-    Parameters
-    ----------
-    mu : float
-        Heure du pic (0 ≤ mu < 24). Toute valeur hors plage est repliée modulo 24.
-    sigma_left : float
-        Écart type, en heures, pour la partie *avant* le pic (côté gauche).
-    n : int
-        Nombre de cases (bins) sur 24 heures.
-    sigma_right : float, optional
-        Écart type pour la partie *après* le pic (côté droit).  
-        Si 0 (valeur par défaut), on prend `sigma_right = sigma_left`
-        ➜ profil symétrique.
-
-    Returns
-    -------
-    np.ndarray
-        Tableau de longueur ``n`` dont la somme vaut 1.
-
-    Notes
-    -----
-    * La distance circulaire signée se calcule avec ::
-
-          delta = ((t - mu + 12) % 24) - 12    # ∈ (-12, 12]
-
-      Δ < 0 → côté gauche · Δ ≥ 0 → côté droit.
-    """
-
-    mu = mu % 24
-    if sigma_right == 0:
-        sigma_right = sigma_left
-    if sigma_left <= 0 or sigma_right <= 0:
-        raise ValueError("sigma_left et sigma_right doivent être > 0")
-
-    t = np.linspace(0, 24, n, endpoint=False)
-    delta = ((t - mu + 12) % 24) - 12           # (-12, 12]
-    sigma = np.where(delta < 0, sigma_left, sigma_right)
-    prof = np.exp(-(delta**2) / (2 * sigma**2))
-    return prof / prof.sum()
-
-def profile_df(prof: np.ndarray) -> pd.DataFrame:
-    """Helper to build a Time/Prob DataFrame for editing profiles."""
-    minutes_per_slot = 1440 // n_res
-    times = [
-        f"{(i * minutes_per_slot) // 60:02d}:{(i * minutes_per_slot) % 60:02d}"
-        for i in range(n_res)
-    ]
-    return pd.DataFrame({"Time": times, "Prob": prof})
-
-def compute_time_bins(resolution: int, recharge_time: float) -> tuple[list[str], int, float]:
-    """Return time bin labels and slot parameters for a given resolution."""
-    minutes_per_slot = 1440 // resolution
-    time_bins = [
-        f"{(i * minutes_per_slot) // 60:02d}:{(i * minutes_per_slot) % 60:02d}"
-        for i in range(resolution)
-    ]
-    slot_len = 24 / resolution
-    n_slots = max(1, int(recharge_time / slot_len))
-    return time_bins, n_slots, slot_len
-
-def sync_from_slot():
-    """Quand l'utilisateur modifie slot_minutes, on met n_res à jour."""
-    st.session_state["n_res"] = 1440 // st.session_state["slot_minutes"]
-
-def sync_from_nres():
-    """Quand l'utilisateur modifie n_res, on met slot_minutes à jour."""
-    st.session_state["slot_minutes"] = 1440 // st.session_state["n_res"]
 
 
 st.set_page_config(page_title="EV & Hybrid Dashboard", layout="wide")
@@ -151,14 +72,6 @@ def get_dist(fleet_df, province):
     return CarDistribution(fleet_df, Province=province)
 dist = get_dist(fleet_df, province)
 
-
-def count_vehicles(dist: CarDistribution, provinces: list[str], types: list[str] | None) -> int:
-    """Return total vehicle stock for selected provinces and vehicle types."""
-    df = dist.data
-    mask = df["Province"].isin(provinces)
-    if types:
-        mask &= df["Vehicle Type"].isin(types)
-    return int(df.loc[mask, "Vehicles nb"].sum())
 
 @st.cache_data
 def load_electric_efficiency():

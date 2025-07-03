@@ -3,6 +3,7 @@ import numpy as np
 import math
 from scipy.interpolate import interp1d
 from datetime import datetime, timedelta
+from typing import Union
 
 class CarRecharge:
     """EV charging‑behaviour model with statistical sampling (MDPI‑based).
@@ -168,3 +169,50 @@ class CarRecharge:
 
         self.data = pd.DataFrame(records).sort_values("Timestamp").reset_index(drop=True)
         return self.data
+    
+
+def gaussian_profile(
+    mu: float,  sigma_left: Union[int, float],
+    n: int,     sigma_right: Union[int, float] = 0,
+) -> np.ndarray:
+    """
+    Profil gaussien circulaire (24 h) éventuellement asymétrique.
+
+    Parameters
+    ----------
+    mu : float
+        Heure du pic (0 ≤ mu < 24). Toute valeur hors plage est repliée modulo 24.
+    sigma_left : float
+        Écart type, en heures, pour la partie *avant* le pic (côté gauche).
+    n : int
+        Nombre de cases (bins) sur 24 heures.
+    sigma_right : float, optional
+        Écart type pour la partie *après* le pic (côté droit).  
+        Si 0 (valeur par défaut), on prend `sigma_right = sigma_left`
+        ➜ profil symétrique.
+
+    Returns
+    -------
+    np.ndarray
+        Tableau de longueur ``n`` dont la somme vaut 1.
+
+    Notes
+    -----
+    * La distance circulaire signée se calcule avec ::
+
+          delta = ((t - mu + 12) % 24) - 12    # ∈ (-12, 12]
+
+      Δ < 0 → côté gauche · Δ ≥ 0 → côté droit.
+    """
+
+    mu = mu % 24
+    if sigma_right == 0:
+        sigma_right = sigma_left
+    if sigma_left <= 0 or sigma_right <= 0:
+        raise ValueError("sigma_left et sigma_right doivent être > 0")
+
+    t = np.linspace(0, 24, n, endpoint=False)
+    delta = ((t - mu + 12) % 24) - 12           # (-12, 12]
+    sigma = np.where(delta < 0, sigma_left, sigma_right)
+    prof = np.exp(-(delta**2) / (2 * sigma**2))
+    return prof / prof.sum()
