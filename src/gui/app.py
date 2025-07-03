@@ -89,7 +89,7 @@ def load_car_usage() -> CarUsage:
 
 
 electric_eff = CarEfficiency(load_electric_efficiency())
-hybrid_eff   = CarEfficiency(load_hybrid_efficiency())
+#hybrid_eff   = CarEfficiency(load_hybrid_efficiency())
 
 
 # ── Vehicle selection ───────────────────────────────────────────────────────────────────────────────────────────────────────
