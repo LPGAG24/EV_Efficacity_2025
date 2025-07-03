@@ -33,8 +33,9 @@ class CarEfficiency:
         self.fuel_consumption: dict[str, float] = {}
         self.distance: dict[str, float] = {}
         
-        self.efficiency_percent_by_vehicle_type: dict[str, float] = {} 
+        self.efficiency_percent_by_vehicle_type: dict[str, float] = {}
         self.set_efficiency_by_type()
+        self.set_battery_by_type()
  
 
     def set_efficiency_by_type(self, selected_types: list[str] | None = None) -> None:
@@ -82,6 +83,26 @@ class CarEfficiency:
 
         # 6) Stockage
         self.efficiency_by_vehicle_type = means
+
+    def set_battery_by_type(self, selected_types: list[str] | None = None) -> None:
+        """Compute mean battery capacity (kWh) by vehicle class."""
+        df = self.data.copy()
+        df["Vehicle class"] = df["Vehicle class"].str.split(":", n=1).str[0]
+        df["Range (km)"] = pd.to_numeric(df["Range (km)"], errors="coerce")
+        df["Combined (kWh/100 km)"] = pd.to_numeric(
+            df["Combined (kWh/100 km)"], errors="coerce"
+        )
+        df["Battery_kWh"] = df["Range (km)"] * df["Combined (kWh/100 km)"] / 100.0
+        if selected_types:
+            df = df[df["Vehicle class"].isin(selected_types)]
+        means = (
+            df.groupby("Vehicle class", sort=False)["Battery_kWh"].mean().reset_index()
+        )
+        self.battery_by_vehicle_type = means
+
+    def get_battery_by_type(self, category: str | None = None) -> pd.DataFrame:
+        df = self.battery_by_vehicle_type
+        return df[df["Vehicle class"] == category] if category else df
 
     def get_efficiency_by_type(self, category: str = None) -> pd.DataFrame:
         """Return average combined consumption, optionally for one vehicle class.
@@ -227,19 +248,19 @@ class ChargerInfo:
 if __name__ == "__main__":
     import pandas as pd
     import matplotlib.pyplot as plt
-    # Example usage
+
     data = pd.DataFrame({
         "Vehicle class": ["Compact: X", "Compact: Y", "Subcompact: Z"],
         "Combined (Le/100 km)": ["5.6 (20.2 kWh/100 km)", "5.4 (19.5 kWh/100 km)", "4.8 (17.3 kWh/100 km)"]
     })
-    
+
     car_efficiency = CarEfficiency(data)
     print(car_efficiency.get_efficiency_by_type())
 
-
-    # Plotting the efficiency by vehicle type
-    plt.bar(car_efficiency.efficiency_by_vehicle_type["Vehicle class"],
-            car_efficiency.efficiency_by_vehicle_type["Combined (Le/100 km)"])
+    plt.bar(
+        car_efficiency.efficiency_by_vehicle_type["Vehicle class"],
+        car_efficiency.efficiency_by_vehicle_type["Combined (Le/100 km)"]
+    )
     plt.xlabel("Vehicle Class")
     plt.ylabel("Combined (Le/100 km)")
     plt.title("Efficiency by Vehicle Type")
