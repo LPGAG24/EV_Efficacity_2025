@@ -46,6 +46,10 @@ st.sidebar.selectbox("Nombre de créneaux par jour", N_RES_OPTIONS, index=N_RES_
 slot_minutes = st.session_state.slot_minutes
 n_res        = st.session_state.n_res    # ← voilà « n_res » pour la suite
 
+# store number of custom profiles for dynamic editing
+if "custom_profile_count" not in st.session_state:
+    st.session_state.custom_profile_count = 1
+
 st.sidebar.markdown(f"**Sélection actuelle** : {n_res} créneaux × {slot_minutes} min = 1 440 min")
 
 @st.cache_data
@@ -230,207 +234,171 @@ except Exception:
 
 # ─────── Custom charging profiles ───────────────────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("Charging profiles")
-home_share_input = st.sidebar.number_input(
-    "Home charging %", min_value=0, max_value=100, value=60, step=1
-)
-work_share_input = st.sidebar.number_input(
-    "Work charging %", min_value=0, max_value=100, value=30, step=1
+profile_mode = st.sidebar.radio(
+    "Mode", ["Normal", "Custom"], horizontal=True, key="profile_mode"
 )
 
-total_share = home_share_input + work_share_input
-if total_share > 100:
-    st.sidebar.warning("Home + Work share exceeds 100%")
-
-custom_share = max(0, 100 - total_share)
-st.sidebar.markdown(f"Custom charging %: {custom_share}")
-
-home_share = home_share_input / 100
-work_share = work_share_input / 100
-custom_share = custom_share / 100
-
-# ────── Home and work arrival distributions ────────────────────────────────────────────────────────────────────────────────────
-# ── Home arrival distribution ─────────────────────────────────────────────────────────────────────────────────────────────────────
-with st.container(border=True):
-    st.subheader("Home arrival distribution (editable)")
-    
-    profile_mu_step: float = 0.1
-    
-    profile_type = st.radio("Type de profil", ["Symmetrical", "Asymmetrical"], horizontal=True)
-    if profile_type == "Symmetrical":
-        col1, col2, col3 = st.columns(3)
-        home_mu =       col1.number_input("Home peak hour", 0.0, 23.5, value=18.0, step=0.5)
-        home_sigma =    col2.number_input("Home σ (common)", 0.1, 10.0, value=2.0, step=profile_mu_step)
-        home_speed =    col3.number_input("Home charger speed (kW)", value=7.2)
-        home_prof_default = gaussian_profile(home_mu, home_sigma, n_res) # symétrique
-    else:
-        col1, col2, col3, col4 = st.columns(4)
-        home_mu =           col1.number_input("Home peak hour", 0.0, 23.5, value=18.0, step=0.5)
-        home_sigma_left =   col2.number_input("Home σ (left side)", 0.1, 10.0, value=2.0, step=profile_mu_step)
-        home_sigma_right =  col3.number_input("Home σ (right side)", 0.1, 10.0, value=2.0, step=profile_mu_step)
-        home_speed =        col4.number_input("Home charger speed (kW)", value=7.2)
-        home_prof_default = gaussian_profile(home_mu, home_sigma_left, n_res, home_sigma_right) # asymétrique
-
-    with st.expander("Afficher / masquer le DataFrame", expanded=False):
-        home_df = profile_df(home_prof_default)
-        edited_home = st.data_editor(
-            home_df,
-            num_rows="fixed",
-            column_config={
-                "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
-            },
-            key="home_profile",
-            use_container_width=True,
-        )
-        edited_home["Prob"] = edited_home["Prob"].clip(lower=0)
-        edited_home["Prob"] = edited_home["Prob"] / edited_home["Prob"].sum()
-        home_profile = edited_home["Prob"].to_numpy()
-        
-    st.altair_chart(alt.Chart(edited_home).mark_bar().encode(x="Time", y="Prob").properties(title="Home arrival distribution", width=700, height=250),use_container_width=True,)
-
-# ── Work arrival distribution ─────────────────────────────────────────────────────────────────────────────────────────────────────
-with st.container(border=True):
-    st.subheader("Work arrival distribution (editable)")
-    work_profile_type = st.radio("Type de profil (Work)", ["Symmetrical", "Asymmetrical"],horizontal=True, key="work_profile_type")
-
-    if work_profile_type == "Symmetrical":
-        col1, col2, col3 = st.columns(3)
-        work_mu =       col1.number_input("Work peak hour", 0.0, 23.5, value=9.0, step=0.5, key="work_mu")
-        work_sigma =    col2.number_input("Work σ (common)", 0.5, 5.0, value=2.0, step=profile_mu_step, key="work_sigma")
-        work_speed =    col3.number_input("Work charger speed (kW)", value=11.0, key="work_speed")
-        work_prof_default = gaussian_profile(work_mu, work_sigma, n_res) # symétrique
-
-    else:
-        col1, col2, col3, col4 = st.columns(4)
-        work_mu =           col1.number_input("Work peak hour", 0.0, 23.5, value=9.0, step=0.5, key="work_mu")
-        work_sigma_left =   col2.number_input("Work σ (left side)", 0.5, 5.0, value=2.0, step=profile_mu_step,key="work_sigma_left")
-        work_sigma_right =  col3.number_input("Work σ (right side)", 0.5, 5.0, value=2.0, step=profile_mu_step,key="work_sigma_right")
-        work_speed =        col4.number_input("Work charger speed (kW)", value=11.0, key="work_speed")
-        work_prof_default = gaussian_profile(work_mu, work_sigma_left, n_res, work_sigma_right) # asymétrique
-
-    with st.expander("Afficher / masquer le DataFrame", expanded=False):
-        work_df = profile_df(work_prof_default)
-        edited_work = st.data_editor(
-            work_df,
-            num_rows="fixed",
-            column_config={
-                "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
-            },
-            key="work_profile",
-            use_container_width=True,
-        )
-        edited_work["Prob"] = edited_work["Prob"].clip(lower=0)
-        edited_work["Prob"] = edited_work["Prob"] / edited_work["Prob"].sum()
-        work_profile = edited_work["Prob"].to_numpy()
-
-    # ── Graphe de distribution ────────────────────────────────────────────────
-    st.altair_chart(alt.Chart(edited_work).mark_bar().encode(x="Time", y="Prob").properties(title="Work arrival distribution", width=700, height=250),use_container_width=True,)
-
-# ── Custom arrival distribution ─────────────────────────────────────────────
-with st.container(border=True):
-    st.subheader("Custom arrival distribution (editable)")
-    custom_mu = st.number_input("Custom peak hour", 0.0, 23.5, value=12.0, step=0.5)
-    custom_sigma = st.number_input("Custom σ", 0.1, 10.0, value=2.0, step=0.1)
-    custom_speed = st.number_input("Custom charger speed (kW)", value=7.2)
-    custom_default = gaussian_profile(custom_mu, custom_sigma, n_res)
-    with st.expander("Afficher / masquer le DataFrame", expanded=False):
-        custom_df = profile_df(custom_default)
-        edited_custom = st.data_editor(
-            custom_df,
-            num_rows="fixed",
-            column_config={"Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)},
-            key="custom_profile",
-            use_container_width=True,
-        )
-        edited_custom["Prob"] = edited_custom["Prob"].clip(lower=0)
-        edited_custom["Prob"] = edited_custom["Prob"] / edited_custom["Prob"].sum()
-        custom_profile = edited_custom["Prob"].to_numpy()
-
-    st.altair_chart(
-        alt.Chart(edited_custom).mark_bar().encode(x="Time", y="Prob").properties(
-            title="Custom arrival distribution", width=700, height=250
-        ),
-        use_container_width=True,
+if profile_mode == "Normal":
+    home_share_input = st.sidebar.number_input(
+        "Home charging %", min_value=0, max_value=100, value=60, step=1
     )
+    work_share_input = st.sidebar.number_input(
+        "Work charging %", min_value=0, max_value=100, value=30, step=1
+    )
+
+    total_share = home_share_input + work_share_input
+    if total_share > 100:
+        st.sidebar.warning("Home + Work share exceeds 100%")
+
+    custom_share_display = max(0, 100 - total_share)
+    st.sidebar.markdown(f"Custom charging %: {custom_share_display}")
+
+    home_share = home_share_input / 100
+    work_share = work_share_input / 100
+    custom_share = custom_share_display / 100
+else:
+    home_share = 0.0
+    work_share = 0.0
+    custom_share = 1.0
+
+
+# ────── Arrival distributions ────────────────────────────────────────────────
+categories = []
+
+if profile_mode == "Normal":
+    home = arrival_profile_editor(
+        "Home arrival distribution",
+        n_slots=n_res,
+        mu0=18.0,
+        sigma0=2.0,
+        speed0=7.2,
+        key="home",
+    )
+    categories.append({
+        "share": home_share,
+        "profile": home["profile"],
+        "speed": home["kW"],
+        "label": "Level 1 Charger",
+    })
+
+    work = arrival_profile_editor(
+        "Work arrival distribution",
+        n_slots=n_res,
+        mu0=9.0,
+        sigma0=2.0,
+        speed0=11.0,
+        key="work",
+    )
+    categories.append({
+        "share": work_share,
+        "profile": work["profile"],
+        "speed": work["kW"],
+        "label": "Level 2 Charger",
+    })
+else:
+    plus, minus = st.sidebar.columns(2)
+    if plus.button("+"):
+        st.session_state.custom_profile_count += 1
+    if minus.button("-") and st.session_state.custom_profile_count > 1:
+        st.session_state.custom_profile_count -= 1
+
+    shares = []
+    for i in range(st.session_state.custom_profile_count):
+        name = st.sidebar.text_input(
+            f"Name {i+1}", value=f"Profile {i+1}", key=f"name_{i}"
+        )
+        share = st.sidebar.number_input(
+            f"{name} %", 0, 100, 100 // st.session_state.custom_profile_count,
+            key=f"share_{i}"
+        )
+        prof = arrival_profile_editor(
+            f"{name} arrival distribution",
+            n_slots=n_res,
+            mu0=12.0,
+            sigma0=2.0,
+            speed0=7.2,
+            key=f"custom_{i}",
+        )
+        categories.append(
+            {
+                "share": share / 100,
+                "profile": prof["profile"],
+                "speed": prof["kW"],
+                "label": name,
+            }
+        )
+        shares.append(share)
+
+    if sum(shares) > 100:
+        st.sidebar.warning("Total share exceeds 100%")
 
 # --- Compute charging cars and electric demand ------------------------------
 time_bins, n_slots, slot_len = compute_time_bins(n_res, recharge_time)
 
-home_conv = np.convolve(home_profile, np.ones(n_slots), mode="same")
-work_conv = np.convolve(work_profile, np.ones(n_slots), mode="same")
-custom_conv = np.convolve(custom_profile, np.ones(n_slots), mode="same")
+cars_df = pd.DataFrame({"Time": time_bins})
+power_df = pd.DataFrame({"Time": time_bins})
+arrivals_list = []
+kernels_list = []
 
-home_cars = home_share * car_count * home_conv
-work_cars = work_share * car_count * work_conv
-custom_cars = custom_share * car_count * custom_conv
+for cat in categories:
+    conv = np.convolve(cat["profile"], np.ones(n_slots), mode="same")
+    cars = cat["share"] * car_count * conv
+    cars_df[cat["label"]] = cars
+    power_df[cat["label"]] = cars * cat["speed"]
+    arrivals_list.append(cat["share"] * car_count * cat["profile"])
+    kernels_list.append(np.full(n_slots, cat["speed"]))
 
-cars_df = pd.DataFrame({
-    "Time": time_bins,
-    "Home_cars": home_cars,
-    "Work_cars": work_cars,
-    "Custom_cars": custom_cars,
-})
-cars_df["Total_cars"] = cars_df[["Home_cars", "Work_cars", "Custom_cars"]].sum(axis=1)
+cars_df["Total_cars"] = cars_df[[c["label"] for c in categories]].sum(axis=1)
+power_df["Total_kW"] = power_df[[c["label"] for c in categories]].sum(axis=1)
 
-rename = {
-    "Home_cars": "Level 1 Charger",
-    "Work_cars": "Level 2 Charger",
-    "Custom_cars": "Custom",
-}
-cars_long = cars_df.rename(columns=rename).melt(
-    id_vars="Time",
-    value_vars=["Level 1 Charger", "Level 2 Charger", "Custom"],
-    var_name="Source", value_name="Cars"
-)
+arrivals_mat = np.column_stack(arrivals_list)
+kernels = np.column_stack(kernels_list)
+power_df["Agg_kW"] = aggregate_power(arrivals_mat, kernels)
+
+value_vars = [c["label"] for c in categories]
+cars_long = cars_df.melt(id_vars="Time", value_vars=value_vars,
+                         var_name="Source", value_name="Cars")
 chart_cars = (
     alt.Chart(cars_long)
     .mark_area(opacity=0.7)
-    .encode(x=alt.X("Time", sort=None), y=alt.Y("Cars", stack=None), color=alt.Color("Source:N", title="Charging location"))
-    .properties(title=f"Daily number of cars state ({province}, " f"{selected_types if selected_types is not None else 'Average'} Vehicle)", width=900, height=350)
+    .encode(
+        x=alt.X("Time", sort=None),
+        y=alt.Y("Cars", stack=None),
+        color=alt.Color("Source:N", title="Charging location"),
+    )
+    .properties(
+        title=f"Daily number of cars state ({province}, "
+        f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
+        width=900,
+        height=350,
+    )
 )
-
 st.altair_chart(chart_cars, use_container_width=True)
 
-power_home = home_cars * home_speed
-power_work = work_cars * work_speed
-power_custom = custom_cars * custom_speed
-
-power_df = pd.DataFrame({
-    "Time": time_bins,
-    "Home_kW": power_home,
-    "Work_kW": power_work,
-    "Custom_kW": power_custom,
-})
-power_df["Total_kW"] = power_df[["Home_kW", "Work_kW", "Custom_kW"]].sum(axis=1)
-
-# ── Aggregate power demand ─────────────────────────────────────────────────────────────────────────────────────────────────────
-arrivals_mat = np.column_stack([
-    home_share * car_count * home_profile,
-    work_share * car_count * work_profile,
-    custom_share * car_count * custom_profile,
-])
-kernels = np.column_stack([
-    np.full(n_slots, home_speed),
-    np.full(n_slots, work_speed),
-    np.full(n_slots, custom_speed),
-])
-power_df["Agg_kW"] = aggregate_power(arrivals_mat, kernels)
-
-power_long = power_df.melt(id_vars="Time", value_vars=["Home_kW", "Work_kW", "Custom_kW"],
+power_long = power_df.melt(id_vars="Time", value_vars=value_vars,
                            var_name="Source", value_name="kW")
 
-
-area_chart = alt.Chart(power_long).mark_line(color='blue').encode(
-    x=alt.X('Time', sort=None),
-    y=alt.Y('kW', stack=None),
-    color='Source'
+area_chart = alt.Chart(power_long).mark_line(color="blue").encode(
+    x=alt.X("Time", sort=None),
+    y=alt.Y("kW", stack=None),
+    color="Source",
 )
 
-line_chart = alt.Chart(power_df).mark_area(opacity=0.5).encode(x='Time', y='Agg_kW')
+line_chart = (
+    alt.Chart(power_df)
+    .mark_area(opacity=0.5)
+    .encode(x="Time", y="Agg_kW")
+)
 
-chart_power = (area_chart + line_chart).properties(title=f"Electric demand ({province}, "f"{selected_types if selected_types is not None else 'Average'} Vehicle)", width=900, height=350)
+chart_power = (
+    area_chart + line_chart
+).properties(
+    title=f"Electric demand ({province}, "
+    f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
+    width=900,
+    height=350,
+)
 st.altair_chart(chart_power, use_container_width=True)
-
-# --- Weekly energy graph -----------------------------------------------------
 slot_hours = slot_len
 power_df["Energy_kWh"] = power_df["Agg_kW"] * slot_hours
 week_days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
