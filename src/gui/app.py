@@ -248,110 +248,25 @@ home_share = home_share_input / 100
 work_share = work_share_input / 100
 custom_share = custom_share / 100
 
-# ────── Home and work arrival distributions ────────────────────────────────────────────────────────────────────────────────────
-# ── Home arrival distribution ─────────────────────────────────────────────────────────────────────────────────────────────────────
-with st.container(border=True):
-    st.subheader("Home arrival distribution (editable)")
-    
-    profile_mu_step: float = 0.1
-    
-    profile_type = st.radio("Type de profil", ["Symmetrical", "Asymmetrical"], horizontal=True)
-    if profile_type == "Symmetrical":
-        col1, col2, col3 = st.columns(3)
-        home_mu =       col1.number_input("Home peak hour", 0.0, 23.5, value=18.0, step=0.5)
-        home_sigma =    col2.number_input("Home σ (common)", 0.1, 10.0, value=2.0, step=profile_mu_step)
-        home_speed =    col3.number_input("Home charger speed (kW)", value=7.2)
-        home_prof_default = gaussian_profile(home_mu, home_sigma, n_res) # symétrique
-    else:
-        col1, col2, col3, col4 = st.columns(4)
-        home_mu =           col1.number_input("Home peak hour", 0.0, 23.5, value=18.0, step=0.5)
-        home_sigma_left =   col2.number_input("Home σ (left side)", 0.1, 10.0, value=2.0, step=profile_mu_step)
-        home_sigma_right =  col3.number_input("Home σ (right side)", 0.1, 10.0, value=2.0, step=profile_mu_step)
-        home_speed =        col4.number_input("Home charger speed (kW)", value=7.2)
-        home_prof_default = gaussian_profile(home_mu, home_sigma_left, n_res, home_sigma_right) # asymétrique
 
-    with st.expander("Afficher / masquer le DataFrame", expanded=False):
-        home_df = profile_df(home_prof_default)
-        edited_home = st.data_editor(
-            home_df,
-            num_rows="fixed",
-            column_config={
-                "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
-            },
-            key="home_profile",
-            use_container_width=True,
-        )
-        edited_home["Prob"] = edited_home["Prob"].clip(lower=0)
-        edited_home["Prob"] = edited_home["Prob"] / edited_home["Prob"].sum()
-        home_profile = edited_home["Prob"].to_numpy()
-        
-    st.altair_chart(alt.Chart(edited_home).mark_bar().encode(x="Time", y="Prob").properties(title="Home arrival distribution", width=700, height=250),use_container_width=True,)
+# ────── Arrival distributions ────────────────────────────────────────────────
+home = arrival_profile_editor(
+    "Home arrival distribution", n_slots=n_res, mu0=18.0, sigma0=2.0, speed0=7.2, key="home"
+)
+home_profile = home["profile"]
+home_speed = home["kW"]
 
-# ── Work arrival distribution ─────────────────────────────────────────────────────────────────────────────────────────────────────
-with st.container(border=True):
-    st.subheader("Work arrival distribution (editable)")
-    work_profile_type = st.radio("Type de profil (Work)", ["Symmetrical", "Asymmetrical"],horizontal=True, key="work_profile_type")
+work = arrival_profile_editor(
+    "Work arrival distribution", n_slots=n_res, mu0=9.0, sigma0=2.0, speed0=11.0, key="work"
+)
+work_profile = work["profile"]
+work_speed = work["kW"]
 
-    if work_profile_type == "Symmetrical":
-        col1, col2, col3 = st.columns(3)
-        work_mu =       col1.number_input("Work peak hour", 0.0, 23.5, value=9.0, step=0.5, key="work_mu")
-        work_sigma =    col2.number_input("Work σ (common)", 0.5, 5.0, value=2.0, step=profile_mu_step, key="work_sigma")
-        work_speed =    col3.number_input("Work charger speed (kW)", value=11.0, key="work_speed")
-        work_prof_default = gaussian_profile(work_mu, work_sigma, n_res) # symétrique
-
-    else:
-        col1, col2, col3, col4 = st.columns(4)
-        work_mu =           col1.number_input("Work peak hour", 0.0, 23.5, value=9.0, step=0.5, key="work_mu")
-        work_sigma_left =   col2.number_input("Work σ (left side)", 0.5, 5.0, value=2.0, step=profile_mu_step,key="work_sigma_left")
-        work_sigma_right =  col3.number_input("Work σ (right side)", 0.5, 5.0, value=2.0, step=profile_mu_step,key="work_sigma_right")
-        work_speed =        col4.number_input("Work charger speed (kW)", value=11.0, key="work_speed")
-        work_prof_default = gaussian_profile(work_mu, work_sigma_left, n_res, work_sigma_right) # asymétrique
-
-    with st.expander("Afficher / masquer le DataFrame", expanded=False):
-        work_df = profile_df(work_prof_default)
-        edited_work = st.data_editor(
-            work_df,
-            num_rows="fixed",
-            column_config={
-                "Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)
-            },
-            key="work_profile",
-            use_container_width=True,
-        )
-        edited_work["Prob"] = edited_work["Prob"].clip(lower=0)
-        edited_work["Prob"] = edited_work["Prob"] / edited_work["Prob"].sum()
-        work_profile = edited_work["Prob"].to_numpy()
-
-    # ── Graphe de distribution ────────────────────────────────────────────────
-    st.altair_chart(alt.Chart(edited_work).mark_bar().encode(x="Time", y="Prob").properties(title="Work arrival distribution", width=700, height=250),use_container_width=True,)
-
-# ── Custom arrival distribution ─────────────────────────────────────────────
-with st.container(border=True):
-    st.subheader("Custom arrival distribution (editable)")
-    custom_mu = st.number_input("Custom peak hour", 0.0, 23.5, value=12.0, step=0.5)
-    custom_sigma = st.number_input("Custom σ", 0.1, 10.0, value=2.0, step=0.1)
-    custom_speed = st.number_input("Custom charger speed (kW)", value=7.2)
-    custom_default = gaussian_profile(custom_mu, custom_sigma, n_res)
-    with st.expander("Afficher / masquer le DataFrame", expanded=False):
-        custom_df = profile_df(custom_default)
-        edited_custom = st.data_editor(
-            custom_df,
-            num_rows="fixed",
-            column_config={"Prob": st.column_config.NumberColumn(step=0.01, min_value=0.0)},
-            key="custom_profile",
-            use_container_width=True,
-        )
-        edited_custom["Prob"] = edited_custom["Prob"].clip(lower=0)
-        edited_custom["Prob"] = edited_custom["Prob"] / edited_custom["Prob"].sum()
-        custom_profile = edited_custom["Prob"].to_numpy()
-
-    st.altair_chart(
-        alt.Chart(edited_custom).mark_bar().encode(x="Time", y="Prob").properties(
-            title="Custom arrival distribution", width=700, height=250
-        ),
-        use_container_width=True,
-    )
-
+custom = arrival_profile_editor(
+    "Custom arrival distribution", n_slots=n_res, mu0=12.0, sigma0=2.0, speed0=7.2, key="custom"
+)
+custom_profile = custom["profile"]
+custom_speed = custom["kW"]
 # --- Compute charging cars and electric demand ------------------------------
 time_bins, n_slots, slot_len = compute_time_bins(n_res, recharge_time)
 
