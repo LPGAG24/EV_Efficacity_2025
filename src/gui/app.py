@@ -230,122 +230,150 @@ except Exception:
 
 # ─────── Custom charging profiles ───────────────────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("Charging profiles")
-home_share_input = st.sidebar.number_input(
-    "Home charging %", min_value=0, max_value=100, value=60, step=1
-)
-work_share_input = st.sidebar.number_input(
-    "Work charging %", min_value=0, max_value=100, value=30, step=1
+profile_mode = st.sidebar.radio(
+    "Mode", ["Normal", "Custom"], horizontal=True, key="profile_mode"
 )
 
-total_share = home_share_input + work_share_input
-if total_share > 100:
-    st.sidebar.warning("Home + Work share exceeds 100%")
+if profile_mode == "Normal":
+    home_share_input = st.sidebar.number_input(
+        "Home charging %", min_value=0, max_value=100, value=60, step=1
+    )
+    work_share_input = st.sidebar.number_input(
+        "Work charging %", min_value=0, max_value=100, value=30, step=1
+    )
 
-custom_share = max(0, 100 - total_share)
-st.sidebar.markdown(f"Custom charging %: {custom_share}")
+    total_share = home_share_input + work_share_input
+    if total_share > 100:
+        st.sidebar.warning("Home + Work share exceeds 100%")
 
-home_share = home_share_input / 100
-work_share = work_share_input / 100
-custom_share = custom_share / 100
+    custom_share_display = max(0, 100 - total_share)
+    st.sidebar.markdown(f"Custom charging %: {custom_share_display}")
+
+    home_share = home_share_input / 100
+    work_share = work_share_input / 100
+    custom_share = custom_share_display / 100
+else:
+    home_share = 0.0
+    work_share = 0.0
+    custom_share = 1.0
 
 
 # ────── Arrival distributions ────────────────────────────────────────────────
-home = arrival_profile_editor(
-    "Home arrival distribution", n_slots=n_res, mu0=18.0, sigma0=2.0, speed0=7.2, key="home"
-)
-home_profile = home["profile"]
-home_speed = home["kW"]
+categories = []
 
-work = arrival_profile_editor(
-    "Work arrival distribution", n_slots=n_res, mu0=9.0, sigma0=2.0, speed0=11.0, key="work"
-)
-work_profile = work["profile"]
-work_speed = work["kW"]
+if profile_mode == "Normal":
+    home = arrival_profile_editor(
+        "Home arrival distribution",
+        n_slots=n_res,
+        mu0=18.0,
+        sigma0=2.0,
+        speed0=7.2,
+        key="home",
+    )
+    categories.append({
+        "share": home_share,
+        "profile": home["profile"],
+        "speed": home["kW"],
+        "label": "Level 1 Charger",
+    })
 
-custom = arrival_profile_editor(
-    "Custom arrival distribution", n_slots=n_res, mu0=12.0, sigma0=2.0, speed0=7.2, key="custom"
-)
-custom_profile = custom["profile"]
-custom_speed = custom["kW"]
+    work = arrival_profile_editor(
+        "Work arrival distribution",
+        n_slots=n_res,
+        mu0=9.0,
+        sigma0=2.0,
+        speed0=11.0,
+        key="work",
+    )
+    categories.append({
+        "share": work_share,
+        "profile": work["profile"],
+        "speed": work["kW"],
+        "label": "Level 2 Charger",
+    })
+else:
+    custom = arrival_profile_editor(
+        "Custom arrival distribution",
+        n_slots=n_res,
+        mu0=12.0,
+        sigma0=2.0,
+        speed0=7.2,
+        key="custom",
+    )
+    categories.append({
+        "share": custom_share,
+        "profile": custom["profile"],
+        "speed": custom["kW"],
+        "label": "Custom",
+    })
+
 # --- Compute charging cars and electric demand ------------------------------
 time_bins, n_slots, slot_len = compute_time_bins(n_res, recharge_time)
 
-home_conv = np.convolve(home_profile, np.ones(n_slots), mode="same")
-work_conv = np.convolve(work_profile, np.ones(n_slots), mode="same")
-custom_conv = np.convolve(custom_profile, np.ones(n_slots), mode="same")
+cars_df = pd.DataFrame({"Time": time_bins})
+power_df = pd.DataFrame({"Time": time_bins})
+arrivals_list = []
+kernels_list = []
 
-home_cars = home_share * car_count * home_conv
-work_cars = work_share * car_count * work_conv
-custom_cars = custom_share * car_count * custom_conv
+for cat in categories:
+    conv = np.convolve(cat["profile"], np.ones(n_slots), mode="same")
+    cars = cat["share"] * car_count * conv
+    cars_df[cat["label"]] = cars
+    power_df[cat["label"]] = cars * cat["speed"]
+    arrivals_list.append(cat["share"] * car_count * cat["profile"])
+    kernels_list.append(np.full(n_slots, cat["speed"]))
 
-cars_df = pd.DataFrame({
-    "Time": time_bins,
-    "Home_cars": home_cars,
-    "Work_cars": work_cars,
-    "Custom_cars": custom_cars,
-})
-cars_df["Total_cars"] = cars_df[["Home_cars", "Work_cars", "Custom_cars"]].sum(axis=1)
+cars_df["Total_cars"] = cars_df[[c["label"] for c in categories]].sum(axis=1)
+power_df["Total_kW"] = power_df[[c["label"] for c in categories]].sum(axis=1)
 
-rename = {
-    "Home_cars": "Level 1 Charger",
-    "Work_cars": "Level 2 Charger",
-    "Custom_cars": "Custom",
-}
-cars_long = cars_df.rename(columns=rename).melt(
-    id_vars="Time",
-    value_vars=["Level 1 Charger", "Level 2 Charger", "Custom"],
-    var_name="Source", value_name="Cars"
-)
+arrivals_mat = np.column_stack(arrivals_list)
+kernels = np.column_stack(kernels_list)
+power_df["Agg_kW"] = aggregate_power(arrivals_mat, kernels)
+
+value_vars = [c["label"] for c in categories]
+cars_long = cars_df.melt(id_vars="Time", value_vars=value_vars,
+                         var_name="Source", value_name="Cars")
 chart_cars = (
     alt.Chart(cars_long)
     .mark_area(opacity=0.7)
-    .encode(x=alt.X("Time", sort=None), y=alt.Y("Cars", stack=None), color=alt.Color("Source:N", title="Charging location"))
-    .properties(title=f"Daily number of cars state ({province}, " f"{selected_types if selected_types is not None else 'Average'} Vehicle)", width=900, height=350)
+    .encode(
+        x=alt.X("Time", sort=None),
+        y=alt.Y("Cars", stack=None),
+        color=alt.Color("Source:N", title="Charging location"),
+    )
+    .properties(
+        title=f"Daily number of cars state ({province}, "
+        f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
+        width=900,
+        height=350,
+    )
 )
-
 st.altair_chart(chart_cars, use_container_width=True)
 
-power_home = home_cars * home_speed
-power_work = work_cars * work_speed
-power_custom = custom_cars * custom_speed
-
-power_df = pd.DataFrame({
-    "Time": time_bins,
-    "Home_kW": power_home,
-    "Work_kW": power_work,
-    "Custom_kW": power_custom,
-})
-power_df["Total_kW"] = power_df[["Home_kW", "Work_kW", "Custom_kW"]].sum(axis=1)
-
-# ── Aggregate power demand ─────────────────────────────────────────────────────────────────────────────────────────────────────
-arrivals_mat = np.column_stack([
-    home_share * car_count * home_profile,
-    work_share * car_count * work_profile,
-    custom_share * car_count * custom_profile,
-])
-kernels = np.column_stack([
-    np.full(n_slots, home_speed),
-    np.full(n_slots, work_speed),
-    np.full(n_slots, custom_speed),
-])
-power_df["Agg_kW"] = aggregate_power(arrivals_mat, kernels)
-
-power_long = power_df.melt(id_vars="Time", value_vars=["Home_kW", "Work_kW", "Custom_kW"],
+power_long = power_df.melt(id_vars="Time", value_vars=value_vars,
                            var_name="Source", value_name="kW")
 
-
-area_chart = alt.Chart(power_long).mark_line(color='blue').encode(
-    x=alt.X('Time', sort=None),
-    y=alt.Y('kW', stack=None),
-    color='Source'
+area_chart = alt.Chart(power_long).mark_line(color="blue").encode(
+    x=alt.X("Time", sort=None),
+    y=alt.Y("kW", stack=None),
+    color="Source",
 )
 
-line_chart = alt.Chart(power_df).mark_area(opacity=0.5).encode(x='Time', y='Agg_kW')
+line_chart = (
+    alt.Chart(power_df)
+    .mark_area(opacity=0.5)
+    .encode(x="Time", y="Agg_kW")
+)
 
-chart_power = (area_chart + line_chart).properties(title=f"Electric demand ({province}, "f"{selected_types if selected_types is not None else 'Average'} Vehicle)", width=900, height=350)
+chart_power = (
+    area_chart + line_chart
+).properties(
+    title=f"Electric demand ({province}, "
+    f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
+    width=900,
+    height=350,
+)
 st.altair_chart(chart_power, use_container_width=True)
-
-# --- Weekly energy graph -----------------------------------------------------
 slot_hours = slot_len
 power_df["Energy_kWh"] = power_df["Agg_kW"] * slot_hours
 week_days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
