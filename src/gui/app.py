@@ -255,7 +255,8 @@ with st.container():
             if mask.any():
                 edited_vt.loc[mask, "Percent"] += diff
             else:
-                edited_vt = edited_vt.append({"Vehicle Type": "Other", "Percent": diff}, ignore_index=True)
+                new_row = pd.DataFrame([{"Vehicle Type": "Other", "Percent": diff}])
+                edited_vt = pd.concat([edited_vt, new_row], ignore_index=True)
         elif total_pct > 100:
             st.warning("Vehicle type percentages exceed 100%")
         st.table(edited_vt)
@@ -518,11 +519,21 @@ st.altair_chart(chart_power, use_container_width=True)
 
 # --- Weekly energy graph -----------------------------------------------------
 slot_hours = slot_len
-daily_energy = (power_df["Agg_kW"] * slot_hours).sum()
+power_df["Energy_kWh"] = power_df["Agg_kW"] * slot_hours
 week_days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-weekly_df = pd.DataFrame({"Day": week_days, "Energy_kWh": [daily_energy]*7})
-weekly_chart = alt.Chart(weekly_df).mark_bar().encode(x="Day", y="Energy_kWh")\
+week_frames = []
+for day in week_days:
+    df_day = power_df[["Time", "Energy_kWh"]].copy()
+    df_day["Day"] = day
+    week_frames.append(df_day)
+weekly_profile = pd.concat(week_frames, ignore_index=True)
+
+weekly_chart = (
+    alt.Chart(weekly_profile)
+    .mark_line()
+    .encode(x=alt.X("Time", sort=None), y="Energy_kWh", color="Day")
     .properties(title="Weekly electric consumption", width=700, height=300)
+)
 st.altair_chart(weekly_chart, use_container_width=True)
 
 
