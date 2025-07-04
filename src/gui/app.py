@@ -93,7 +93,7 @@ def load_car_usage() -> CarUsage:
 
 
 electric_eff = CarEfficiency(load_electric_efficiency())
-hybrid_eff   = CarEfficiency(load_hybrid_efficiency())
+# hybrid_eff   = CarEfficiency(load_hybrid_efficiency())
 
 
 # ── Vehicle selection ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -401,18 +401,33 @@ chart_power = (
 st.altair_chart(chart_power, use_container_width=True)
 slot_hours = slot_len
 power_df["Energy_kWh"] = power_df["Agg_kW"] * slot_hours
-week_days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+week_days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+hours = np.arange(len(power_df)) * slot_hours
 week_frames = []
-for day in week_days:
-    df_day = power_df[["Time", "Energy_kWh"]].copy()
+for i, day in enumerate(week_days):
+    df_day = power_df[["Energy_kWh"]].copy()
+    df_day["Hour"] = hours + i * 24
     df_day["Day"] = day
     week_frames.append(df_day)
 weekly_profile = pd.concat(week_frames, ignore_index=True)
 
+tick_vals = [i * 24 for i in range(len(week_days))]
 weekly_chart = (
     alt.Chart(weekly_profile)
     .mark_line()
-    .encode(x=alt.X("Time", sort=None), y="Energy_kWh", color="Day")
+    .encode(
+        x=alt.X(
+            "Hour",
+            scale=alt.Scale(domain=[0, 24 * len(week_days)]),
+            axis=alt.Axis(
+                values=tick_vals,
+                labelExpr="['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][datum.value / 24]",
+                title="Day",
+            ),
+        ),
+        y="Energy_kWh",
+        color="Day",
+    )
     .properties(title="Weekly electric consumption", width=700, height=300)
 )
 st.altair_chart(weekly_chart, use_container_width=True)
