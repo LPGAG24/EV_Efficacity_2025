@@ -210,17 +210,13 @@ total_vehicles = count_vehicles(dist, province, selected_types)
 
 ev_share = st.sidebar.number_input(
     "EV share (%)",
-    min_value=0.0,
-    max_value=100.0,
-    value=10.0,
-    step=1.0,
+    min_value=0.0,  max_value=100.0,
+    value=10.0,     step=1.0,
 )
 default_count = int(total_vehicles * ev_share / 100)
 car_count = st.sidebar.number_input(
-    "Number of EVs",
-    min_value=0,
-    value=default_count,
-    step=1,
+    "Number of EVs",    min_value=0,
+    value=default_count,step=1,
 )
 
 
@@ -268,32 +264,24 @@ categories = []
 if profile_mode == "Normal":
     home = arrival_profile_editor(
         "Home arrival distribution",
-        n_slots=n_res,
-        mu0=18.0,
-        sigma0=2.0,
-        speed0=7.2,
+        n_slots=n_res,  mu0=18.0,
+        sigma0=2.0,     speed0=7.2,
         key="home",
     )
     categories.append({
-        "share": home_share,
-        "profile": home["profile"],
-        "speed": home["kW"],
-        "label": "Level 1 Charger",
+        "share": home_share,    "profile": home["profile"], 
+        "speed": home["kW"],    "label": "Level 1 Charger",
     })
 
     work = arrival_profile_editor(
         "Work arrival distribution",
-        n_slots=n_res,
-        mu0=9.0,
-        sigma0=2.0,
-        speed0=11.0,
+        n_slots=n_res,  mu0=9.0,
+        sigma0=2.0,     speed0=11.0,
         key="work",
     )
     categories.append({
-        "share": work_share,
-        "profile": work["profile"],
-        "speed": work["kW"],
-        "label": "Level 2 Charger",
+        "share": work_share,    "profile": work["profile"],
+        "speed": work["kW"],    "label": "Level 2 Charger",
     })
 else:
     plus, minus = st.sidebar.columns(2)
@@ -313,18 +301,14 @@ else:
         )
         prof = arrival_profile_editor(
             f"{name} arrival distribution",
-            n_slots=n_res,
-            mu0=12.0,
-            sigma0=2.0,
-            speed0=7.2,
+            n_slots=n_res,  mu0=12.0,
+            sigma0=2.0, speed0=7.2,
             key=f"custom_{i}",
         )
         categories.append(
             {
-                "share": share / 100,
-                "profile": prof["profile"],
-                "speed": prof["kW"],
-                "label": name,
+                "share": share / 100,   "profile": prof["profile"],
+                "speed": prof["kW"],    "label": name,
             }
         )
         shares.append(share)

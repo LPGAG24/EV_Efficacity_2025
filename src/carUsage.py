@@ -215,6 +215,11 @@ class CarUsage:
 from stats_can import StatsCan
 import pandas as pd
 
+def fetch_statcan_distance():
+    sc = StatsCan()
+    t_part = sc.table_to_df("45-10-0104-03")
+    return t_part
+
 def fetch_statcan_daily_drivers():
     """
     Fetches, for each province, the number of people who drove a car on a typical weekday/weekend day in 2022.
