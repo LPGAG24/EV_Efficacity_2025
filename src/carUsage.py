@@ -3,7 +3,14 @@ import numpy as np
 import re
 import math
 import util.normalizer as util
-import streamlit as st
+try:
+    import streamlit as st  # optional dependency
+except ModuleNotFoundError:  # pragma: no cover - streamlit not required for tests
+    st = None
+try:
+    import matplotlib.pyplot as plt  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - optional for headless tests
+    plt = None
 
 class CarUsage:
     """CarUsage class for analyzing vehicle usage data.
@@ -219,6 +226,65 @@ def fetch_statcan_distance():
     sc = StatsCan()
     t_part = sc.table_to_df("45-10-0104-03")
     return t_part
+
+
+def _extract_private_vehicle_stats(
+    df: pd.DataFrame, province: str
+) -> tuple[float, float, float]:
+    """Return (mean, low95, high95) for private vehicle daily average time."""
+    mask = (
+        (df["Activity group"] == "Private vehicle")
+        & (df["REF_DATE"] == pd.Timestamp("2022-01-01"))
+        & (df["Gender"] == "Total, all persons")
+        & (df["Age group"] == "Total, 15 years and over")
+        & (df["GEO"] == province)
+    )
+    sub = df[mask]
+    mean = float(
+        sub.loc[sub["Statistics"] == "Daily average time, population", "VALUE"].iloc[0]
+    )
+    low = float(
+        sub.loc[
+            sub["Statistics"]
+            == "Low 95% confidence interval, daily average time, population",
+            "VALUE",
+        ].iloc[0]
+    )
+    high = float(
+        sub.loc[
+            sub["Statistics"]
+            == "High 95% confidence interval, daily average time, population",
+            "VALUE",
+        ].iloc[0]
+    )
+    return mean, low, high
+
+
+def gaussian_private_vehicle(
+    province: str = "Canada", n_points: int = 200
+) -> pd.DataFrame:
+    """Return gaussian distribution for private vehicle time of *province*."""
+    df = fetch_statcan_distance()
+    mean, low, high = _extract_private_vehicle_stats(df, province)
+    sigma = max((high - low) / 4, 1e-6)
+    x = np.linspace(mean - 4 * sigma, mean + 4 * sigma, n_points)
+    y = 1.0 / (sigma * np.sqrt(2 * np.pi)) * np.exp(-0.5 * ((x - mean) / sigma) ** 2)
+    return pd.DataFrame({"Time": x, "Density": y})
+
+
+def plot_private_vehicle_gaussian(province: str = "Canada") -> None:
+    """Plot gaussian curve using matplotlib if available."""
+    if plt is None:
+        raise ImportError("matplotlib is required for plotting")
+    df = gaussian_private_vehicle(province)
+    plt.figure(figsize=(6, 4))
+    plt.plot(df["Time"], df["Density"], label=province)
+    plt.title(f"Private vehicle daily average time\n{province} - 2022")
+    plt.xlabel("Daily average time (hours)")
+    plt.ylabel("Density")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 def fetch_statcan_daily_drivers():
     """

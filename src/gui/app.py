@@ -228,6 +228,27 @@ try:
 except Exception:
     avg_distance = 30
 
+try:
+    gauss_frames = []
+    for prov in province:
+        gdf = gaussian_private_vehicle(prov)
+        gdf["Province"] = prov
+        gauss_frames.append(gdf)
+    gauss_df = pd.concat(gauss_frames, ignore_index=True)
+    gauss_chart = (
+        alt.Chart(gauss_df)
+        .mark_line()
+        .encode(
+            x=alt.X("Time", title="Daily average time (hours)"),
+            y=alt.Y("Density"),
+            color="Province",
+        )
+        .properties(title="Private vehicle daily time distribution")
+    )
+    st.altair_chart(gauss_chart, use_container_width=True)
+except Exception:
+    pass
+
 # ─────── Custom charging profiles ───────────────────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("Charging profiles")
 profile_mode = st.sidebar.radio(
