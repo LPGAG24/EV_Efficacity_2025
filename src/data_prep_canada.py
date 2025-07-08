@@ -139,6 +139,16 @@ def fetch_statcan_fleet(table_id: str = "23-10-0308-01") -> pd.DataFrame:
     print(f"[StatCan] {table_id} | REF_DATE={latest_year}")
     return fleet
 
+def fetch_statcan(link:str)->pd.DataFrame:
+    """
+    Fetch a StatCan table by link, return DataFrame.
+    """
+    sc = StatsCan()
+    tbl = sc.table_to_df(link)
+    if tbl.empty:
+        raise ValueError(f"No data found for {link}")
+    return tbl
+
 
 
 # ─── Main entrypoint ───────────────────────────────────────────────────────

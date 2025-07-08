@@ -14,3 +14,6 @@ env/
 data/raw/
 data/processed/
 models/*.pkl
+
+# ---Ignorer tous les fichiers HDF5 téléchargés de StatCan---
+*.h5

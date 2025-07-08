@@ -227,6 +227,17 @@ def fetch_statcan_distance():
     t_part = sc.table_to_df("45-10-0104-03")
     return t_part
 
+def fetch_statcan(link:str) -> pd.DataFrame:
+    """
+    Fetch a StatCan table by link, return DataFrame.
+    """
+    sc = StatsCan()
+    sc.delete_tables(link)
+    tbl = sc.table_to_df(link)
+    if tbl.empty:
+        raise ValueError(f"No data found for {link}")
+    return tbl
+
 
 def _extract_private_vehicle_stats(
     df: pd.DataFrame, province: str
@@ -325,18 +336,55 @@ def fetch_statcan_daily_drivers():
     return merged
 
 
+def fetch_statcan_time_to_work():
+    # Need to retreive the file from statcan but not already in stats_can.
+    # retreive it in csv before
+    pass
+    sc = StatsCan()
+    
+    
+
 
 
 if __name__ == "__main__":
     car_usage = CarUsage()
     car_usage.fetchData()
-    daily_drivers = car_usage.get_daily_driver_counts()
-
-    # Print Quebec weekday and weekend
-    print("Quebec weekday drivers:", daily_drivers)
-    print("Quebec weekend drivers:", daily_drivers)
-
-    # Print for all provinces
-    print(car_usage.daily_drivers)
-
     
+    case:int = 5
+        # Print Quebec weekday and weekend
+    match case:
+        case 1:
+            daily_drivers = car_usage.get_daily_driver_counts()
+            print("Quebec weekday drivers:", daily_drivers)
+            print("Quebec weekend drivers:", daily_drivers)
+            print(car_usage.daily_drivers)
+        case 2:
+            t_part = fetch_statcan_distance()
+            t_second = t_part[(t_part["Age group"] == "Total, 15 years and over") &
+                   (t_part["GEO"] == "Canada") &
+                   (t_part["Activity group"] == "Sleep and personal activities") &
+                   (t_part["Gender"] == "Total, all persons")]
+            print(t_second)
+        case 3:
+            fetch_statcan("98-10-0461-01")
+        case 4:
+            #retrieve info from a csv
+            df = pd.read_csv("C:/Users/lpgag/Downloads/98100461-eng/98100461.csv")
+            print(df.head())
+        case 5:
+            import stats_can as sc
+            from stats_can import api_class as scapi
+            PROVINCES = [
+                "Newfoundland and Labrador", "Prince Edward Island", "Nova Scotia",
+                "New Brunswick", "Quebec", "Ontario", "Manitoba",
+                "Saskatchewan", "Alberta", "British Columbia"
+            ]
+
+            api = scapi.StatsCan()
+            # 1️⃣  metadata for the table
+            meta = api.vector_metadata(api.table_to_df("98-10-0462-01").columns)
+            # 2️⃣  pick vectors where the metadata GEO is one of the provinces
+            prov_vecs = [m["vector"] for m in meta if m["GEO"] in PROVINCES]
+            # 3️⃣  pull only those series (fast JSON call, a few KB)
+            df_small = sc.sc.vectors_to_df_remote(prov_vecs, periods=120)   # last 120 periods
+
