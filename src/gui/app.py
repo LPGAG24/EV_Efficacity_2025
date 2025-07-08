@@ -154,13 +154,26 @@ with st.container():
 
     with col1:
         st.header("1 · Fleet distribution")
-        st.subheader("Fuel mix")
-        st.table(dist.get_fuel_type())
+        st.subheader("Vehicle fleet")
+        fuel_df = dist.get_fuel_type().reset_index().rename(
+            columns={"index": "Fuel Type"}
+        )
+        fuel_chart = (
+            alt.Chart(fuel_df)
+            .mark_bar()
+            .encode(
+                x=alt.X("Fuel Type", title="Fuel Type"),
+                y=alt.Y("Percent", title="Percent"),
+            )
+            .properties(title="Fuel mix", width=450, height=300)
+        )
+        st.altair_chart(fuel_chart, use_container_width=True)
 
         st.subheader("Vehicle‑type mix")
-        vt_df = dist.get_fuel_type_percent_by_vehicle(selected_types).reset_index()
+        vt_df = dist.get_fuel_type_percent_by_vehicle(None).reset_index()
         vt_df.columns = ["Vehicle Type", "Percent"]
         edited_vt = st.data_editor(vt_df, num_rows="dynamic")
+        selected_types = edited_vt["Vehicle Type"].tolist()
         total_pct = edited_vt["Percent"].sum()
         if total_pct < 100:
             diff = 100 - total_pct
