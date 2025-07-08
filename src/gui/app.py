@@ -64,7 +64,7 @@ if not province:
     province = ["Canada"]
 
 # 2) Vehicle‑class multiselect (for efficiency tables)
-selected_types = []
+selected_types = None
 
 # ── Data prep ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Distribution object (for fleet tables)
@@ -96,13 +96,9 @@ electric_eff = CarEfficiency(load_electric_efficiency())
 # hybrid_eff   = CarEfficiency(load_hybrid_efficiency())
 
 
-# ── Vehicle selection ───────────────────────────────────────────────────────────────────────────────────────────────────────
-st.sidebar.header("Vehicle")
-selected_types = st.sidebar.multiselect(
-    "Vehicle class",
-    options=electric_eff.efficiency_by_vehicle_type["Vehicle class"].tolist(),
-    default=["Compact"]
-)
+# ── Vehicle selection ─────────────────────────────────────────────────────────
+# Selection uses fleet distribution table; no sidebar multiselect
+
 
 
 recharge_time = 8.0
