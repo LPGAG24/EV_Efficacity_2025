@@ -176,7 +176,17 @@ with st.container():
                 edited_vt = pd.concat([edited_vt, new_row], ignore_index=True)
         elif total_pct > 100:
             st.warning("Vehicle type percentages exceed 100%")
-        st.table(edited_vt)
+
+        vt_chart = (
+            alt.Chart(edited_vt)
+            .mark_bar()
+            .encode(
+                x=alt.X("Vehicle Type", title="Vehicle Type"),
+                y=alt.Y("Percent", title="Percent"),
+            )
+            .properties(title="Fleet distribution", width=450, height=300)
+        )
+        st.altair_chart(vt_chart, use_container_width=True)
 
     with col2:
         st.header("2 · Efficiency (kWh/100 km) and Battery size")
