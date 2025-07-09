@@ -155,7 +155,7 @@ with st.container():
     with col1:
         st.header("1 · Fleet distribution")
         st.subheader("Vehicle fleet")
-        # list of all vehicles with an editable "Active" flag
+        # list of all vehicles with an editable "Active" flag and battery size
         vehicles_df = (
             electric_eff.data[
                 [
@@ -170,7 +170,27 @@ with st.container():
             .drop_duplicates()
             .copy()
         )
-        vehicles_df["Active"] = False
+
+        vehicles_df["Battery (kWh)"] = (
+            pd.to_numeric(vehicles_df["Range (km)"], errors="coerce")
+            * pd.to_numeric(vehicles_df["Combined (kWh/100 km)"], errors="coerce")
+            / 100.0
+        )
+
+        # Active column first, followed by computed battery size
+        vehicles_df.insert(0, "Active", False)
+        vehicles_df = vehicles_df[
+            [
+                "Active",
+                "Make",
+                "Model",
+                "Vehicle class",
+                "Battery (kWh)",
+                "Combined (kWh/100 km)",
+                "Recharge time (h)",
+                "Range (km)",
+            ]
+        ]
 
         st.data_editor(
             vehicles_df,
