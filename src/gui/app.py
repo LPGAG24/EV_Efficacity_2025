@@ -155,15 +155,32 @@ with st.container():
     with col1:
         st.header("1 · Fleet distribution")
         st.subheader("Vehicle fleet")
-        #list of all vehicle
-        st.data_editor(electric_eff.data[["Make", "Model", "Vehicle class", "Combined (kWh/100 km)", "Recharge time (h)", "Range (km)"]].drop_duplicates(),
-                     height=300, use_container_width=True,
-                     column_config={
-                         "Active": st.column_config.CheckboxColumn(
-                             "Active",                # étiquette dans l’UI
-                             default=False             # valeur par défaut pour les nouvelles lignes
-                         )
-                     })
+        # list of all vehicles
+        st.data_editor(
+            electric_eff.data[
+                [
+                    "Make",
+                    "Model",
+                    "Vehicle class",
+                    "Combined (kWh/100 km)",
+                    "Recharge time (h)",
+                    "Range (km)",
+                ]
+            ].drop_duplicates(),
+            height=300,
+            use_container_width=True,
+            column_config={
+                "Active": st.column_config.CheckboxColumn(
+                    "Active",  # label in UI
+                    default=False,  # default for new rows
+                )
+            },
+        )
+
+        st.subheader("Fuel mix")
+        fuel_mix_df = dist.get_fuel_type().reset_index()
+        fuel_mix_df.columns = ["Fuel Type", "Percent"]
+        st.table(fuel_mix_df)
 
         st.subheader("Vehicle‑type mix")
         vt_df = dist.get_fuel_type_percent_by_vehicle(None).reset_index()
