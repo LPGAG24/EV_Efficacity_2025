@@ -174,6 +174,7 @@ class CarDistribution:
         """
         Returns a DataFrame of fuel‐type shares across the fleet.
         """
+        
         return pd.DataFrame.from_dict(
             self.fuel_type_percent, orient="index", columns=["Percent"]
         )
