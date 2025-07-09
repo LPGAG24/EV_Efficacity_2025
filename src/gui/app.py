@@ -155,8 +155,8 @@ with st.container():
     with col1:
         st.header("1 · Fleet distribution")
         st.subheader("Vehicle fleet")
-        # list of all vehicles
-        st.data_editor(
+        # list of all vehicles with an editable "Active" flag
+        vehicles_df = (
             electric_eff.data[
                 [
                     "Make",
@@ -166,13 +166,20 @@ with st.container():
                     "Recharge time (h)",
                     "Range (km)",
                 ]
-            ].drop_duplicates(),
+            ]
+            .drop_duplicates()
+            .copy()
+        )
+        vehicles_df["Active"] = False
+
+        st.data_editor(
+            vehicles_df,
             height=300,
             use_container_width=True,
             column_config={
                 "Active": st.column_config.CheckboxColumn(
-                    "Active",  # label in UI
-                    default=False,  # default for new rows
+                    "Active",
+                    default=False,
                 )
             },
         )
