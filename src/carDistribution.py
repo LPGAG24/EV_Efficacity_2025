@@ -173,11 +173,16 @@ class CarDistribution:
     def get_fuel_type(self) -> pd.DataFrame:
         """
         Returns a DataFrame of fuel‐type shares across the fleet.
-        """
-        
-        return pd.DataFrame.from_dict(
+        """         
+        # if there is nothing computed yet, return an empty DataFrame
+        if not self.fuel_type_percent:
+            return pd.DataFrame(columns=["Percent"])
+        # otherwise build the DataFrame from the stored dict
+        df = pd.DataFrame.from_dict(
             self.fuel_type_percent, orient="index", columns=["Percent"]
         )
+        df.index.name = "Fuel Type"
+        return df
 
 
     def set_fuel_type_percent_by_vehicle(self) -> None:
@@ -204,12 +209,16 @@ class CarDistribution:
         Returns per-vehicle-type percentage of the fleet as a DataFrame.
         """
         if selected_types is None:
-            selected_types = self.fuel_type_percent_by_vehicle.keys()
-        if isinstance(selected_types, list):
-            filtered = {k: v for k, v in self.fuel_type_percent_by_vehicle.items() if k in selected_types}
-            return pd.DataFrame.from_dict(
-            filtered, orient="index", columns=["Percent"]
-            )
+            # no filter → include all vehicle types
+            filtered = self.fuel_type_percent_by_vehicle
+        else:
+            # filter by the given types
+            filtered = {
+                k: v
+                for k, v in self.fuel_type_percent_by_vehicle.items()
+                if k in selected_types
+            }
+        return pd.DataFrame.from_dict(filtered, orient="index", columns=["Percent"])
 
 
     def switch_province(self, Province: str):
