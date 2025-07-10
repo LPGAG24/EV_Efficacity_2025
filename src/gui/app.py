@@ -149,6 +149,8 @@ else:
 st.title(f"🚗 EV & Hybrid Dashboard — {province}")
 
 # 1 & 2: tables and efficiency (your original code)
+selected_eff = electric_eff
+
 with st.container():
     col1, col2 = st.columns(2, gap="large")
 
@@ -192,10 +194,11 @@ with st.container():
             ]
         ]
 
-        st.data_editor(
+        edited_vehicles = st.data_editor(
             vehicles_df,
             height=300,
             use_container_width=True,
+            key="fleet_editor",
             column_config={
                 "Active": st.column_config.CheckboxColumn(
                     "Active",
@@ -203,6 +206,18 @@ with st.container():
                 )
             },
         )
+
+        active_rows = edited_vehicles[edited_vehicles["Active"]]
+        if not active_rows.empty:
+            filtered = electric_eff.data.merge(
+                active_rows[["Make", "Model"]], on=["Make", "Model"], how="inner"
+            )
+            selected_eff = CarEfficiency(filtered)
+            recharge_time = pd.to_numeric(
+                filtered["Recharge time (h)"], errors="coerce"
+            ).mean()
+        else:
+            selected_eff = electric_eff
 
         st.subheader("Fuel mix")
         fuel_mix_df = dist.get_fuel_type().reset_index()
@@ -240,10 +255,10 @@ with st.container():
     with col2:
         st.header("2 · Efficiency (kWh/100 km) and Battery size")
         tab1, tab2 = st.tabs(["⚡ Chart", "DataFrame"])
-        electric_eff.set_efficiency_by_type(selected_types)
-        electric_eff.set_battery_by_type(selected_types)
-        df_e = electric_eff.efficiency_by_vehicle_type
-        df_b = electric_eff.battery_by_vehicle_type
+        selected_eff.set_efficiency_by_type(selected_types)
+        selected_eff.set_battery_by_type(selected_types)
+        df_e = selected_eff.efficiency_by_vehicle_type
+        df_b = selected_eff.battery_by_vehicle_type
         df_merge = df_e.merge(df_b, on="Vehicle class")
         chart_df = (
             df_merge[["Vehicle class", "Combined (Le/100 km)", "Battery_kWh"]]
