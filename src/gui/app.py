@@ -99,8 +99,6 @@ electric_eff = CarEfficiency(load_electric_efficiency())
 # ── Vehicle selection ─────────────────────────────────────────────────────────
 # Selection uses fleet distribution table; no sidebar multiselect
 
-
-
 recharge_time = 8.0
 show_vehicle_picker = st.sidebar.checkbox("Select vehicle")
 if show_vehicle_picker:
@@ -152,78 +150,71 @@ st.title(f"🚗 EV & Hybrid Dashboard — {province}")
 selected_eff = electric_eff
 
 with st.container():
-    col1, col2 = st.columns(2, gap="large")
-
-    with col1:
-        st.header("1 · Fleet distribution")
-        st.subheader("Vehicle fleet")
-        # list of all vehicles with an editable "Active" flag and battery size
-        vehicles_df = (
-            electric_eff.data[
-                [
-                    "Make",
-                    "Model",
-                    "Vehicle class",
-                    "Combined (kWh/100 km)",
-                    "Recharge time (h)",
-                    "Range (km)",
-                ]
-            ]
-            .drop_duplicates()
-            .copy()
-        )
-
-        vehicles_df["Battery (kWh)"] = (
-            pd.to_numeric(vehicles_df["Range (km)"], errors="coerce")
-            * pd.to_numeric(vehicles_df["Combined (kWh/100 km)"], errors="coerce")
-            / 100.0
-        )
-
-        # Active column first, followed by computed battery size
-        vehicles_df.insert(0, "Active", False)
-        vehicles_df = vehicles_df[
+    st.header("1 · Fleet distribution")
+    st.subheader("Vehicle fleet")
+    # list of all vehicles with an editable "Active" flag and battery size
+    vehicles_df = (
+        electric_eff.data[
             [
-                "Active",
                 "Make",
                 "Model",
                 "Vehicle class",
-                "Battery (kWh)",
                 "Combined (kWh/100 km)",
                 "Recharge time (h)",
                 "Range (km)",
             ]
         ]
-
-        edited_vehicles = st.data_editor(
-            vehicles_df,
-            height=300,
-            use_container_width=True,
-            key="fleet_editor",
-            column_config={
-                "Active": st.column_config.CheckboxColumn(
-                    "Active",
-                    default=False,
-                )
-            },
-        )
-
-        active_rows = edited_vehicles[edited_vehicles["Active"]]
-        if not active_rows.empty:
-            filtered = electric_eff.data.merge(
-                active_rows[["Make", "Model"]], on=["Make", "Model"], how="inner"
+        .drop_duplicates()
+        .copy()
+    )
+    vehicles_df["Battery (kWh)"] = (
+        pd.to_numeric(vehicles_df["Range (km)"], errors="coerce")
+        * pd.to_numeric(vehicles_df["Combined (kWh/100 km)"], errors="coerce")
+        / 100.0
+    ).pipe(lambda s: np.ceil(s / 5) * 5)
+    # Active column first, followed by computed battery size
+    vehicles_df.insert(0, "Active", False)
+    vehicles_df = vehicles_df[
+        [
+            "Active",
+            "Make",
+            "Model",
+            "Vehicle class",
+            "Battery (kWh)",
+            "Combined (kWh/100 km)",
+            "Recharge time (h)",
+            "Range (km)",
+        ]
+    ]
+    edited_vehicles = st.data_editor(
+        vehicles_df,
+        height=300,
+        use_container_width=True,
+        key="fleet_editor",
+        column_config={
+            "Active": st.column_config.CheckboxColumn(
+                "Active",
+                default=False,
             )
-            selected_eff = CarEfficiency(filtered)
-            recharge_time = pd.to_numeric(
-                filtered["Recharge time (h)"], errors="coerce"
-            ).mean()
-        else:
-            selected_eff = electric_eff
+        },
+    )
+    active_rows = edited_vehicles[edited_vehicles["Active"]]
+    if not active_rows.empty:
+        filtered = electric_eff.data.merge(
+            active_rows[["Make", "Model"]], on=["Make", "Model"], how="inner"
+        )
+        selected_eff = CarEfficiency(filtered)
+        recharge_time = pd.to_numeric(
+            filtered["Recharge time (h)"], errors="coerce"
+        ).mean()
+    else:
+        selected_eff = electric_eff
 
-        st.subheader("Fuel mix")
-        fuel_mix_df = dist.get_fuel_type().reset_index()
-        fuel_mix_df.columns = ["Fuel Type", "Percent"]
-        st.table(fuel_mix_df)
 
+
+with st.container():
+    col1, col2 = st.columns(2, gap="large")
+    with col1:
         st.subheader("Vehicle‑type mix")
         vt_df = dist.get_fuel_type_percent_by_vehicle(None).reset_index()
         vt_df.columns = ["Vehicle Type", "Percent"]
