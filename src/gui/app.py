@@ -351,23 +351,25 @@ if profile_mode == "Normal":
     home = arrival_profile_editor(
         "Home arrival distribution",
         n_slots=n_res,  mu0=18.0,
-        sigma0=2.0,     speed0=7.2,
+        sigma0=2.0,     ratio0=(100.0, 0.0, 0.0),
         key="home",
     )
     categories.append({
-        "share": home_share,    "profile": home["profile"], 
-        "speed": home["kW"],    "label": "Level 1 Charger",
+        "share": home_share,    "profile": home["profile"],
+        "speed": home["kW"],    "label": "Home",
+        "level_kW": home["kW_levels"],
     })
 
     work = arrival_profile_editor(
         "Work arrival distribution",
         n_slots=n_res,  mu0=9.0,
-        sigma0=2.0,     speed0=11.0,
+        sigma0=2.0,     ratio0=(0.0, 100.0, 0.0),
         key="work",
     )
     categories.append({
         "share": work_share,    "profile": work["profile"],
-        "speed": work["kW"],    "label": "Level 2 Charger",
+        "speed": work["kW"],    "label": "Work",
+        "level_kW": work["kW_levels"],
     })
 else:
     plus, minus = st.sidebar.columns(2)
@@ -388,13 +390,14 @@ else:
         prof = arrival_profile_editor(
             f"{name} arrival distribution",
             n_slots=n_res,  mu0=12.0,
-            sigma0=2.0, speed0=7.2,
+            sigma0=2.0, ratio0=(100.0, 0.0, 0.0),
             key=f"custom_{i}",
         )
         categories.append(
             {
                 "share": share / 100,   "profile": prof["profile"],
                 "speed": prof["kW"],    "label": name,
+                "level_kW": prof["kW_levels"],
             }
         )
         shares.append(share)
