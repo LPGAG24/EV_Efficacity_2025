@@ -3,11 +3,11 @@ from carRecharge        import *
 from carDistribution    import *
 
 # Default charging speeds for the three charger levels (kW)
-CHARGER_KW = {
-    "Level 1": 1.9,
-    "Level 2": 7.2,
-    "Level 3": 50.0,
-}
+DEFAULT_CHARGER_KW = (
+    1.9,    # Level 1
+    7.2,    # Level 2
+    50.0,   # Level 3
+)
 
 def profile_df(p):         # 24-slot → tidy DataFrame
     return pd.DataFrame({"Time": [f"{i//2:02d}:{'30' if i%2 else '00'}" for i in range(len(p))],
@@ -49,6 +49,7 @@ def arrival_profile_editor(                 # compact UI helper
     mu0=18.0,
     sigma0=2.0,
     ratio0=(100.0, 0.0, 0.0),
+    power0=DEFAULT_CHARGER_KW,
     key="home",
 ):
     k = lambda s: f"{key}_{s}"             # unique Streamlit keys
@@ -72,6 +73,17 @@ def arrival_profile_editor(                 # compact UI helper
         lvl3 = ratio_cols[2].number_input(
             "Level 3 (%)", 0.0, 100.0, ratio0[2], step=1.0, key=k("lvl3")
         )
+
+        power_cols = st.columns(3)
+        p1 = power_cols[0].number_input(
+            "Level 1 kW", 0.0, 350.0, power0[0], step=0.1, key=k("p1")
+        )
+        p2 = power_cols[1].number_input(
+            "Level 2 kW", 0.0, 350.0, power0[1], step=0.1, key=k("p2")
+        )
+        p3 = power_cols[2].number_input(
+            "Level 3 kW", 0.0, 350.0, power0[2], step=0.1, key=k("p3")
+        )
         total = lvl1 + lvl2 + lvl3
         if total > 100:
             st.warning("Charger level ratios exceed 100%")
@@ -80,11 +92,7 @@ def arrival_profile_editor(                 # compact UI helper
             (lvl2 / total) if total else 0.0,
             (lvl3 / total) if total else 0.0,
         )
-        kw = (
-            ratios[0] * CHARGER_KW["Level 1"]
-            + ratios[1] * CHARGER_KW["Level 2"]
-            + ratios[2] * CHARGER_KW["Level 3"]
-        )
+        kw = ratios[0] * p1 + ratios[1] * p2 + ratios[2] * p3
 
         prof = gaussian_profile(mu, sl, n_slots, sr) if asym \
                else gaussian_profile(mu, sl, n_slots)
@@ -112,6 +120,7 @@ def arrival_profile_editor(                 # compact UI helper
         "σ_R": sr,
         "kW": kw,
         "ratios": ratios,
+        "kW_levels": (p1, p2, p3),
     }
 
 

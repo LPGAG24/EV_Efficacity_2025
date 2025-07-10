@@ -357,6 +357,7 @@ if profile_mode == "Normal":
     categories.append({
         "share": home_share,    "profile": home["profile"],
         "speed": home["kW"],    "label": "Home",
+        "level_kW": home["kW_levels"],
     })
 
     work = arrival_profile_editor(
@@ -368,6 +369,7 @@ if profile_mode == "Normal":
     categories.append({
         "share": work_share,    "profile": work["profile"],
         "speed": work["kW"],    "label": "Work",
+        "level_kW": work["kW_levels"],
     })
 else:
     plus, minus = st.sidebar.columns(2)
@@ -395,6 +397,7 @@ else:
             {
                 "share": share / 100,   "profile": prof["profile"],
                 "speed": prof["kW"],    "label": name,
+                "level_kW": prof["kW_levels"],
             }
         )
         shares.append(share)
