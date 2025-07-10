@@ -2,6 +2,13 @@ import streamlit as st, altair as alt, numpy as np, pandas as pd
 from carRecharge        import *
 from carDistribution    import *
 
+# Default charging speeds for the three charger levels (kW)
+CHARGER_KW = {
+    "Level 1": 1.9,
+    "Level 2": 7.2,
+    "Level 3": 50.0,
+}
+
 def profile_df(p):         # 24-slot → tidy DataFrame
     return pd.DataFrame({"Time": [f"{i//2:02d}:{'30' if i%2 else '00'}" for i in range(len(p))],
                          "Prob": p})
@@ -41,7 +48,7 @@ def arrival_profile_editor(                 # compact UI helper
     n_slots=48,
     mu0=18.0,
     sigma0=2.0,
-    speed0=7.2,
+    ratio0=(100.0, 0.0, 0.0),
     key="home",
 ):
     k = lambda s: f"{key}_{s}"             # unique Streamlit keys
@@ -55,7 +62,29 @@ def arrival_profile_editor(                 # compact UI helper
         sl = cols[1].number_input("σ left" if asym else "σ", 0.1, 10.0, sigma0, 0.1, key=k("sl"))
         sr = cols[2].number_input("σ right", 0.1, 10.0, sigma0, 0.1,
                                   key=k("sr")) if asym else sl
-        kw = cols[-1].number_input("kW", value=speed0, key=k("kw"))
+        ratio_cols = st.columns(3)
+        lvl1 = ratio_cols[0].number_input(
+            "Level 1 (%)", 0.0, 100.0, ratio0[0], step=1.0, key=k("lvl1")
+        )
+        lvl2 = ratio_cols[1].number_input(
+            "Level 2 (%)", 0.0, 100.0, ratio0[1], step=1.0, key=k("lvl2")
+        )
+        lvl3 = ratio_cols[2].number_input(
+            "Level 3 (%)", 0.0, 100.0, ratio0[2], step=1.0, key=k("lvl3")
+        )
+        total = lvl1 + lvl2 + lvl3
+        if total > 100:
+            st.warning("Charger level ratios exceed 100%")
+        ratios = (
+            (lvl1 / total) if total else 0.0,
+            (lvl2 / total) if total else 0.0,
+            (lvl3 / total) if total else 0.0,
+        )
+        kw = (
+            ratios[0] * CHARGER_KW["Level 1"]
+            + ratios[1] * CHARGER_KW["Level 2"]
+            + ratios[2] * CHARGER_KW["Level 3"]
+        )
 
         prof = gaussian_profile(mu, sl, n_slots, sr) if asym \
                else gaussian_profile(mu, sl, n_slots)
@@ -76,6 +105,13 @@ def arrival_profile_editor(                 # compact UI helper
             use_container_width=True,
         )
 
-    return {"profile": prof, "mu": mu, "σ_L": sl, "σ_R": sr, "kW": kw}
+    return {
+        "profile": prof,
+        "mu": mu,
+        "σ_L": sl,
+        "σ_R": sr,
+        "kW": kw,
+        "ratios": ratios,
+    }
 
 
