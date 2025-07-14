@@ -152,7 +152,7 @@ selected_eff = electric_eff
 with st.container():
     st.header("1 · Fleet distribution")
     st.subheader("Vehicle fleet")
-    # list of all vehicles with an editable "Active" flag and battery size
+    # list of all vehicles with an editable "Percent" column and battery size
     vehicles_df = (
         electric_eff.data[
             [
@@ -172,11 +172,11 @@ with st.container():
         * pd.to_numeric(vehicles_df["Combined (kWh/100 km)"], errors="coerce")
         / 100.0
     ).pipe(lambda s: np.ceil(s / 5) * 5)
-    # Active column first, followed by computed battery size
-    vehicles_df.insert(0, "Active", False)
+    # Percent column first, followed by computed battery size
+    vehicles_df.insert(0, "Percent", 0.0)
     vehicles_df = vehicles_df[
         [
-            "Active",
+            "Percent",
             "Make",
             "Model",
             "Vehicle class",
@@ -192,21 +192,33 @@ with st.container():
         use_container_width=True,
         key="fleet_editor",
         column_config={
-            "Active": st.column_config.CheckboxColumn(
-                "Active",
-                default=False,
+            "Percent": st.column_config.NumberColumn(
+                "Percent",
+                min_value=0.0,
+                max_value=100.0,
+                step=1.0,
+                default=0.0,
             )
         },
     )
-    active_rows = edited_vehicles[edited_vehicles["Active"]]
-    if not active_rows.empty:
-        filtered = electric_eff.data.merge(
-            active_rows[["Make", "Model"]], on=["Make", "Model"], how="inner"
+    percent_rows = edited_vehicles[edited_vehicles["Percent"] > 0].copy()
+    if not percent_rows.empty:
+        percent_rows["Weight"] = percent_rows["Percent"] / 100.0
+        merged = electric_eff.data.merge(
+            percent_rows[["Make", "Model", "Weight"]],
+            on=["Make", "Model"],
+            how="inner",
         )
-        selected_eff = CarEfficiency(filtered)
-        recharge_time = pd.to_numeric(
-            filtered["Recharge time (h)"], errors="coerce"
-        ).mean()
+        weights = merged.pop("Weight")
+        valid_rt = pd.to_numeric(merged["Recharge time (h)"], errors="coerce")
+        if valid_rt.notna().any():
+            recharge_time = np.average(
+                valid_rt[valid_rt.notna()], weights=weights[valid_rt.notna()]
+            )
+        replicated = merged.loc[
+            merged.index.repeat((weights * 100).round().astype(int))
+        ].reset_index(drop=True)
+        selected_eff = CarEfficiency(replicated)
     else:
         selected_eff = electric_eff
 
