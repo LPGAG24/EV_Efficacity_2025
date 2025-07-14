@@ -304,7 +304,7 @@ try:
         alt.Chart(gauss_df)
         .mark_line()
         .encode(
-            x=alt.X("Time", title="Daily average time (hours)"),
+            x=alt.X("Time", title="Daily average time (minutes)"),
             y=alt.Y("Density"),
             color="Province",
         )

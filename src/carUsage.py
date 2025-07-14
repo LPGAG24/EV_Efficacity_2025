@@ -288,7 +288,7 @@ def time_to_distance(
 def gaussian_private_vehicle(
     province: str = "Canada", n_points: int = 200
 ) -> pd.DataFrame:
-    """Return gaussian distribution for private vehicle time.
+    """Return gaussian distribution for private vehicle time in minutes.
 
     The distribution is derived from national counts of commute durations and
     does not currently vary by *province*.
@@ -306,7 +306,7 @@ def plot_private_vehicle_gaussian(province: str = "Canada") -> None:
     plt.figure(figsize=(6, 4))
     plt.plot(df["Time"], df["Density"], label=province)
     plt.title(f"Private vehicle daily average time\n{province} - 2022")
-    plt.xlabel("Daily average time (hours)")
+    plt.xlabel("Daily average time (minutes)")
     plt.ylabel("Density")
     plt.legend()
     plt.tight_layout()
