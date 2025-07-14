@@ -239,47 +239,62 @@ def fetch_statcan(link:str) -> pd.DataFrame:
     return tbl
 
 
-def _extract_private_vehicle_stats(
-    df: pd.DataFrame, province: str
-) -> tuple[float, float, float]:
-    """Return (mean, low95, high95) for private vehicle daily average time."""
-    mask = (
-        (df["Activity group"] == "Private vehicle")
-        & (df["REF_DATE"] == pd.Timestamp("2022-01-01"))
-        & (df["Gender"] == "Total, all persons")
-        & (df["Age group"] == "Total, 15 years and over")
-        & (df["GEO"] == province)
-    )
-    sub = df[mask]
-    mean = float(
-        sub.loc[sub["Statistics"] == "Daily average time, population", "VALUE"].iloc[0]
-    )
-    low = float(
-        sub.loc[
-            sub["Statistics"]
-            == "Low 95% confidence interval, daily average time, population",
-            "VALUE",
-        ].iloc[0]
-    )
-    high = float(
-        sub.loc[
-            sub["Statistics"]
-            == "High 95% confidence interval, daily average time, population",
-            "VALUE",
-        ].iloc[0]
-    )
-    return mean, low, high
+
+
+# ---- Daily private vehicle time distribution -------------------------------
+# Source counts (number of people by one-way commute duration class)
+COUNTS = {
+    "<15": 4_178_570,
+    "15-29": 4_546_195,
+    "30-44": 2_487_010,
+    "45-59": 910_610,
+    "\u226560": 926_120,
+}
+
+# Midpoints for each duration class (minutes)
+MIDPTS = {"<15": 7.5, "15-29": 22, "30-44": 37, "45-59": 52, "\u226560": 65}
+
+
+def _to_percent(counts: dict[str, int]) -> dict[str, float]:
+    """Convert absolute counts to percentage by category."""
+    total = float(sum(counts.values()))
+    return {k: v / total * 100.0 for k, v in counts.items()}
+
+
+def _gaussian_from_percent(
+    percent: dict[str, float], midpoints: dict[str, float], n_points: int = 200
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return a gaussian curve matching the discrete percentage data."""
+    keys = list(percent)
+    p = np.array([percent[k] for k in keys]) / 100.0
+    m = np.array([midpoints[k] for k in keys])
+    mu = float((p * m).sum())
+    sigma = float(np.sqrt((p * (m - mu) ** 2).sum()))
+    x = np.linspace(max(0, mu - 4 * sigma), mu + 4 * sigma, n_points)
+    y = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
+    return x, y
+
+
+def time_to_distance(
+    x_time: np.ndarray, y_time: np.ndarray, speed_kmh: float = 70.0
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert a time distribution to distance (km) at constant speed."""
+    k = speed_kmh / 60.0
+    x_dist = x_time * k
+    y_dist = y_time / k  # change-of-variable scaling
+    return x_dist, y_dist
 
 
 def gaussian_private_vehicle(
     province: str = "Canada", n_points: int = 200
 ) -> pd.DataFrame:
-    """Return gaussian distribution for private vehicle time of *province*."""
-    df = fetch_statcan_distance()
-    mean, low, high = _extract_private_vehicle_stats(df, province)
-    sigma = max((high - low) / 4, 1e-6)
-    x = np.linspace(mean - 4 * sigma, mean + 4 * sigma, n_points)
-    y = 1.0 / (sigma * np.sqrt(2 * np.pi)) * np.exp(-0.5 * ((x - mean) / sigma) ** 2)
+    """Return gaussian distribution for private vehicle time.
+
+    The distribution is derived from national counts of commute durations and
+    does not currently vary by *province*.
+    """
+    percent = _to_percent(COUNTS)
+    x, y = _gaussian_from_percent(percent, MIDPTS, n_points=n_points)
     return pd.DataFrame({"Time": x, "Density": y})
 
 
