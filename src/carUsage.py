@@ -152,17 +152,17 @@ class CarUsage:
 
         self.data = util.normalize_dataframe(self.data)
         
-        print("Car usage data fetched and processed.")
-        print("Average distance traveled per year (km):")
-        for prov in self.data["Province"]:
-            print(f"  {prov}: {self.data.loc[self.data['Province'] == prov, 'Annual_km'].values[0]}")
-        print("Average distance traveled per weekday (km):")
-        for prov in self.data["Province"]:
-            print(f"  {prov}: {self.data.loc[self.data['Province'] == prov, 'Weekday_km'].values[0]}")
-        print("Average distance traveled per weekend (km):")
-        for prov in self.data["Province"]:
-            print(f"  {prov}: {self.data.loc[self.data['Province'] == prov, 'Weekend_km'].values[0]}")
-        print("Done")
+        #print("Car usage data fetched and processed.")
+        #print("Average distance traveled per year (km):")
+        #for prov in self.data["Province"]:
+        #    print(f"  {prov}: {self.data.loc[self.data['Province'] == prov, 'Annual_km'].values[0]}")
+        #print("Average distance traveled per weekday (km):")
+        #for prov in self.data["Province"]:
+        #    print(f"  {prov}: {self.data.loc[self.data['Province'] == prov, 'Weekday_km'].values[0]}")
+        #print("Average distance traveled per weekend (km):")
+        #for prov in self.data["Province"]:
+        #    print(f"  {prov}: {self.data.loc[self.data['Province'] == prov, 'Weekend_km'].values[0]}")
+        #print("Done")
         
         
     def __getitem__(self, key) -> pd.DataFrame:
