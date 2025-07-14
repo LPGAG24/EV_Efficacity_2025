@@ -108,7 +108,12 @@ def arrival_profile_editor(                 # compact UI helper
             prof = df["Prob"].to_numpy()
 
         st.altair_chart(
-            alt.Chart(df).mark_bar().encode(x="Time", y="Prob")
+            alt.Chart(df)
+            .mark_bar()
+            .encode(
+                x=alt.X("Time", title="Time"),
+                y=alt.Y("Prob", title="Probability"),
+            )
             .properties(title=title, width=700, height=250),
             use_container_width=True,
         )

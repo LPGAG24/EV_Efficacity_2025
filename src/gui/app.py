@@ -237,7 +237,7 @@ with st.container():
             .mark_bar()
             .encode(
                 x=alt.X("Vehicle Type", title="Vehicle Type"),
-                y=alt.Y("Percent", title="Percent"),
+                y=alt.Y("Percent", title="Fleet share (%)"),
             )
             .properties(title="Fleet distribution", width=450, height=300)
         )
@@ -328,16 +328,18 @@ if profile_mode == "Normal":
         "Work charging %", min_value=0, max_value=100, value=30, step=1
     )
 
-    total_share = home_share_input + work_share_input
-    if total_share > 100:
-        st.sidebar.warning("Home + Work share exceeds 100%")
+    total_input = home_share_input + work_share_input
+    if total_input > 100:
+        st.sidebar.warning("Home + Work share exceeds 100% - values will be scaled")
+        scale = 100 / total_input
+    else:
+        scale = 1.0
 
-    custom_share_display = max(0, 100 - total_share)
-    st.sidebar.markdown(f"Custom charging %: {custom_share_display}")
+    home_share = (home_share_input * scale) / 100
+    work_share = (work_share_input * scale) / 100
+    custom_share = 1.0 - home_share - work_share
 
-    home_share = home_share_input / 100
-    work_share = work_share_input / 100
-    custom_share = custom_share_display / 100
+    st.sidebar.markdown(f"Custom charging %: {int(round(custom_share * 100))}")
 else:
     home_share = 0.0
     work_share = 0.0
@@ -371,6 +373,19 @@ if profile_mode == "Normal":
         "speed": work["kW"],    "label": "Work",
         "level_kW": work["kW_levels"],
     })
+    
+    if custom_share > 0:
+        other = arrival_profile_editor(
+            "Other arrival distribution",
+            n_slots=n_res, mu0=12.0,
+            sigma0=2.0, ratio0=(100.0, 0.0, 0.0),
+            key="other",
+        )
+        categories.append({
+            "share": custom_share, "profile": other["profile"],
+            "speed": other["kW"],   "label": "Other",
+            "level_kW": other["kW_levels"],
+        })
 else:
     plus, minus = st.sidebar.columns(2)
     if plus.button("+"):
@@ -429,19 +444,26 @@ kernels = np.column_stack(kernels_list)
 power_df["Agg_kW"] = aggregate_power(arrivals_mat, kernels)
 
 value_vars = [c["label"] for c in categories]
-cars_long = cars_df.melt(id_vars="Time", value_vars=value_vars,
-                         var_name="Source", value_name="Cars")
+cars_long = cars_df.melt(
+    id_vars="Time", value_vars=value_vars, var_name="Source", value_name="Cars"
+)
+cars_long["Cars_thousands"] = cars_long["Cars"] / 1000
 chart_cars = (
     alt.Chart(cars_long)
     .mark_area(opacity=0.7)
     .encode(
         x=alt.X("Time", sort=None),
-        y=alt.Y("Cars", stack=None),
+        y=alt.Y(
+            "Cars_thousands",
+            stack=None,
+            title="Cars (thousands)",
+            axis=alt.Axis(format="~s"),
+        ),
         color=alt.Color("Source:N", title="Charging location"),
     )
     .properties(
-        title=f"Daily number of cars state ({province}, "
-        f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
+         title=f"Cars charging over time ({', '.join(province)}, "
+        f"{selected_types if selected_types is not None else 'Average'} vehicle)",
         width=900,
         height=350,
     )
@@ -453,21 +475,29 @@ power_long = power_df.melt(id_vars="Time", value_vars=value_vars,
 
 area_chart = alt.Chart(power_long).mark_line(color="blue").encode(
     x=alt.X("Time", sort=None),
-    y=alt.Y("kW", stack=None),
-    color="Source",
+    y=alt.Y(
+        "kW",
+        stack=None,
+        title="Power (kW)",
+        axis=alt.Axis(format="~s"),
+    ),
+    color=alt.Color("Source", title="Charging location"),
 )
 
 line_chart = (
     alt.Chart(power_df)
     .mark_area(opacity=0.5)
-    .encode(x="Time", y="Agg_kW")
+    .encode(
+        x="Time",
+        y=alt.Y("Agg_kW", title="Power (kW)", axis=alt.Axis(format="~s")),
+    )
 )
 
 chart_power = (
     area_chart + line_chart
 ).properties(
-    title=f"Electric demand ({province}, "
-    f"{selected_types if selected_types is not None else 'Average'} Vehicle)",
+    title=f"Power demand over time ({', '.join(province)}, "
+    f"{selected_types if selected_types is not None else 'Average'} vehicle)",
     width=900,
     height=350,
 )
@@ -498,7 +528,11 @@ weekly_chart = (
                 title="Day",
             ),
         ),
-        y="Energy_kWh",
+        y=alt.Y(
+            "Energy_kWh",
+            title="Energy (kWh)",
+            axis=alt.Axis(format="~s"),
+        ),
         color="Day",
     )
     .properties(title="Weekly electric consumption", width=700, height=300)

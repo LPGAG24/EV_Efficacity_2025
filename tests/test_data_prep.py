@@ -6,6 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 's
 
 from data_prep_canada import km_to_kwh
 from carDistribution import CarDistribution
+from carUsage import CarUsage
 
 
 def test_km_to_kwh():
@@ -31,3 +32,19 @@ def test_getitem_tuple():
     res = dist["Ontario", "Subcompact", "All fuel types"]
     assert len(res) == 1
     assert res.iloc[0]["Vehicles nb"] == 40
+
+
+def sample_usage_df():
+    return pd.DataFrame({
+        "Day": ["Monday", "Monday", "Tuesday", "Tuesday", "Tuesday"],
+        "Distance_km": [10, 20, 30, 40, 50],
+    })
+
+
+def test_average_daily_distance():
+    cu = CarUsage()
+    cu.set_data(sample_usage_df())
+    avg = cu.average_daily_distance()
+    assert avg["Monday"] == 15.0
+    assert avg["Tuesday"] == 40.0
+    assert avg["Sunday"] == 0.0

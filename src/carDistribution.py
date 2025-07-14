@@ -228,25 +228,6 @@ class CarDistribution:
         
     def __call__(self) -> pd.DataFrame:
         return self.data
-    
-    def __getitem__(self, key) -> pd.DataFrame:
-        """
-        Flexible selector for accessing data by Province, Vehicle Type, or Fuel Type.
-        """
-        if isinstance(key, str):
-            return self.data[self.data["Province"] == key]
-        elif isinstance(key, tuple):
-            if len(key) == 2:
-                return self.data[(self.data["Province"] == key[0]) & (self.data["Vehicle Type"] == key[1])]
-            elif len(key) == 3:
-                return self.data[(self.data["Province"] == key[0]) & (self.data["Vehicle Type"] == key[1]) & (self.data["Fuel Type"] == key[2])]
-        elif isinstance(key, dict):
-            mask = pd.Series(True, index=self.data.index)
-            for col, value in key.items():
-                mask &= self.data[col] == value
-            return self.data[mask]
-        else:
-            raise TypeError("Key must be str, tuple, or dict.")
 
 
 if __name__ == "__main__":
