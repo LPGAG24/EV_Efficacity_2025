@@ -206,44 +206,40 @@ class CarEfficiency:
 
 
 class ChargerInfo:
-    def __init__(self, data: pd.DataFrame):
-        self.chargers = pd.DataFrame()
-        self.chargers["Charger watts"] = {
-            "Level 1" : 120*[12, 14, 16],
-            "Level 2 (208)":208*[15,48,80],
-            "Level 2 (240)":240*[15,48,80],
-            "Level 3 (DC)": 480*[50, 100, 150],}
+    """Utility class providing charger power data and charge time estimates."""
+
+    def __init__(self, data: pd.DataFrame | None = None) -> None:
+        # charger power levels in Watts for low/medium/high settings
+        self.chargers = pd.DataFrame(
+            {
+                "Low":    [120 * 12, 208 * 15, 240 * 15, 480 * 50],
+                "Medium": [120 * 14, 208 * 48, 240 * 48, 480 * 100],
+                "High":   [120 * 16, 208 * 80, 240 * 80, 480 * 150],
+            },
+            index=["Level 1", "Level 2 (208)", "Level 2 (240)", "Level 3 (DC)"]
+        )
     
     def get_charger(self) -> pd.DataFrame:
-        """
-        Returns a DataFrame of charger information.
-        """
-        return self.chargers
-    
-    def get_charging_time(self, vehicle_class: str, battery_capacity_kwh: float) -> pd.DataFrame:
-        """
-        Calculate the charging time for a given vehicle class and battery capacity.
-        
-        Args:
-            vehicle_class (str): The class of the vehicle (e.g., "Level 1", "Level 2 (208)", etc.).
-            battery_capacity_kwh (float): The battery capacity in kWh.
-        
-        Returns:
-            pd.DataFrame: A DataFrame with charging times for each charger type.
-        """
-        if vehicle_class not in self.chargers["Charger watts"].index:
-            raise ValueError(f"Unknown charger type: {vehicle_class}")
-        
-        charger_watts = self.chargers.loc[vehicle_class, "Charger watts"]
-        charging_times = battery_capacity_kwh * 1000 / charger_watts
+        """Return table of charger power levels in Watts."""
+        return self.chargers.copy()
 
-        charging_times = charging_times.round(2)  # Round to 2 decimal places
-        charging_times = charging_times.astype(float)
+    def get_charging_time(self, charger_type: str, battery_capacity_kwh: float) -> pd.DataFrame:
+        """Return charging times for ``charger_type`` at each power level.
 
-        return pd.DataFrame({
-            "Charger Type": self.chargers.index,
-            "Charging Time (hours)": charging_times
-        })
+        Parameters
+        ----------
+        charger_type : str
+            Name of the charger type (e.g. ``"Level 1"``).
+        battery_capacity_kwh : float
+            Battery capacity in kilowatt-hours.
+        """
+        if charger_type not in self.chargers.index:
+            raise ValueError(f"Unknown charger type: {charger_type}")
+
+        watts = self.chargers.loc[charger_type]
+        hours = (battery_capacity_kwh * 1000 / watts).round(2)
+
+        return hours.to_frame(name="Charging Time (hours)")
 
 if __name__ == "__main__":
     import pandas as pd

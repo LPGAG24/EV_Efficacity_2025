@@ -3,114 +3,14 @@ import numpy as np
 import math
 import re
 
-"""
-EV Charging and Usage Simulation Module
+"""EV Charging and Usage Simulation Module
 
 Combines vehicle usage (daily distances, recharge needs) with charging profiles
 (public, residential, DCFC) based on probabilistic time-of-day distributions.
 """
 
-class CarUsage:
-    """Analyze vehicle usage to compute average daily distances and recharge energy needs."""
-
-    def __init__(self):
-        self.data: pd.DataFrame = None
-        self.weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
-        self.weekends = ["Saturday", "Sunday"]
-        self.days: dict[str, pd.DataFrame] = {}
-
-    def set_data(self, data: pd.DataFrame) -> None:
-        """Load raw usage data (columns: Day, Distance_km)."""
-        self.data = data
-        for day in self.weekdays + self.weekends:
-            self.days[day] = self.data[self.data["Day"] == day]
-
-    def average_daily_distance(self) -> dict[str, float]:
-        """Return {day: average distance traveled (km)}."""
-        return {day: (df["Distance_km"].sum() / len(df) if len(df) else 0.0)
-                for day, df in self.days.items()}
-
-    def recharge_needed(self, efficiency_wh_per_km: float) -> dict[str, float]:
-        """Compute daily recharge need (kWh) given efficiency (Wh/km)."""
-        avg = self.average_daily_distance()
-        return {day: (dist * efficiency_wh_per_km / 1000.0)
-                for day, dist in avg.items()}
-
-    def fetch_data_nrcan(self, year: int = 2022) -> pd.DataFrame:
-        """Fetch NRCAN table data and produce DataFrame of annual km by province."""
-        # simplified: user can integrate their existing fetchData logic here
-        raise NotImplementedError("Use customized fetchData logic to load NRCan data.")
-
-
-class CarRecharge:
-    """Generate charging probability profiles for each hour of each day."""
-
-    CHARGER_SPEED = {"Public": {"Level 2": {"mean": 8.83, "STD": 8.04, "Time": 3}},  # kW
-                     "Residential": {"Level 2": {"mean": 12, "STD": 10.28, "Time": 12}},
-                     "DCFC": {"mean": 150.0}}  # kW
-
-    def __init__(self, data: pd.DataFrame):
-        # data: DataFrame with columns [Day, any] to infer days
-        self.weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
-        self.weekends = ["Saturday", "Sunday"]
-        self.charging_profile = {
-            day: [0.0] * 24 for day in self.weekdays + self.weekends
-        }
-
-    def set_car_charging_perc(self, day: str = None, charging=None):
-        """Set explicit hourly charging percentages."""
-        # existing logic from CarRecharge.set_car_charging_perc...
-        if isinstance(charging, dict):
-            mapping = charging
-        elif isinstance(charging, list):
-            if len(charging) == 24 and all(isinstance(x, (int, float)) for x in charging):
-                days = [day] if day else self.weekdays + self.weekends
-                for d in days:
-                    self.charging_profile[d] = list(charging)
-                return
-            elif all(isinstance(x, (tuple, list)) and len(x) == 2 for x in charging):
-                mapping = {int(h): float(p) for h, p in charging}
-            else:
-                raise ValueError("If `charging` is a list it must be either 24 floats or a list of (hour, percent) pairs")
-        else:
-            raise ValueError("charging must be a dict or list")
-
-        profile = [0.0] * 24
-        for h, pct in mapping.items():
-            if not 0 <= h < 24: raise ValueError(f"Hour must be 0–23; got {h}")
-            if not 0.0 <= pct <= 1.0: raise ValueError(f"Percent must be 0.0–1.0; got {pct}")
-            profile[h] = pct
-
-        days = [day] if day else self.weekdays + self.weekends
-        for d in days:
-            self.charging_profile[d] = profile.copy()
-
-    def set_car_charging_prop(self, day: str = None, peaks: list[tuple[int, float]] = None,
-                               base: float = 0.02, sigma: float = 2.0):
-        """Build Gaussian-based 24h charging profile with peaks and base level."""
-        if not peaks:
-            raise ValueError("`peaks` must be provided as list of (hour, weight) tuples")
-        charging = [base] * 24
-        for center, amp in peaks:
-            for h in range(24):
-                dx = h - center
-                charging[h] += amp * math.exp(-0.5 * (dx * dx) / (sigma * sigma))
-        # cap and normalize
-        charging = [min(1.0, c) for c in charging]
-        total = sum(charging)
-        charging = [c / total for c in charging]
-
-        days = day if day else self.weekdays + self.weekends
-        for d in days:
-            self.charging_profile[d] = charging.copy()
-
-    def get_charging_profile_df(self) -> pd.DataFrame:
-        """Return DataFrame with columns [Day, Hour, ChargingPerc]."""
-        records = []
-        for day, profile in self.charging_profile.items():
-            for hr, pct in enumerate(profile):
-                records.append({"Day": day, "Hour": hr, "ChargingPerc": pct})
-        return pd.DataFrame(records)
+from carUsage import CarUsage
+from carRecharge import CarRecharge
     
 
 

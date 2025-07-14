@@ -36,8 +36,7 @@ class CarUsage:
         """Return a dict of {day_name: avg distance traveled (km)}."""
         avg = {}
         for day, df in self.days.items():
-            avg[day] = df["Distance_km"].sum() / df["Distance_km"].nunique() \
-                       if not df.empty else 0.0
+            avg[day] = df["Distance_km"].sum() / len(df) if not df.empty else 0.0
         return avg
     
     def set_average(self, averages: list|float, day: str|list[str] = None):

@@ -7,7 +7,7 @@ graphique pour simuler la charge des véhicules électriques au Canada.
 
 ## Development Setup
 
-Install the testing dependencies using pip:
+Before running the test suite, install the development requirements:
 
 ```bash
 pip install -r requirements-dev.txt
