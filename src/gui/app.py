@@ -487,9 +487,11 @@ cars_long = cars_df.melt(
     id_vars="Time", value_vars=categ_vars, var_name="Source", value_name="Cars"
 )
 cars_long["Cars_thousands"] = cars_long["Cars"] / 1000
-chart_cars = (
+cars_df["Total_thousands"] = cars_df["Total_cars"] / 1000
+
+line_cars = (
     alt.Chart(cars_long)
-    .mark_area(opacity=0.7)
+    .mark_line()
     .encode(
         x=alt.X("Time", sort=None),
         y=alt.Y(
@@ -500,12 +502,28 @@ chart_cars = (
         ),
         color=alt.Color("Source:N", title="Charging location"),
     )
-    .properties(
-         title=f"Cars charging over time ({', '.join(province)}, "
-        f"{selected_types if selected_types is not None else 'Average'} vehicle)",
-        width=900,
-        height=350,
+)
+
+area_total_cars = (
+    alt.Chart(cars_df)
+    .mark_area(opacity=0.5)
+    .encode(
+        x="Time",
+        y=alt.Y(
+            "Total_thousands",
+            title="Cars (thousands)",
+            axis=alt.Axis(format="~s"),
+        ),
     )
+)
+
+chart_cars = (
+    line_cars + area_total_cars
+).properties(
+    title=f"Cars charging over time ({', '.join(province)}, "
+    f"{selected_types if selected_types is not None else 'Average'} vehicle)",
+    width=900,
+    height=350,
 )
 st.altair_chart(chart_cars, use_container_width=True)
 
@@ -514,7 +532,7 @@ power_long = level_power_df.melt(
     id_vars="Time", value_vars=level_vars, var_name="Charger Level", value_name="kW"
 )
 
-area_chart = alt.Chart(power_long).mark_line(color="blue").encode(
+line_levels = alt.Chart(power_long).mark_line().encode(
     x=alt.X("Time", sort=None),
     y=alt.Y(
         "kW",
@@ -525,7 +543,7 @@ area_chart = alt.Chart(power_long).mark_line(color="blue").encode(
     color=alt.Color("Charger Level", title="Charger level"),
 )
 
-line_chart = (
+area_total_power = (
     alt.Chart(level_power_df)
     .mark_area(opacity=0.5)
     .encode(
@@ -535,7 +553,7 @@ line_chart = (
 )
 
 chart_power = (
-    area_chart + line_chart
+    line_levels + area_total_power
 ).properties(
     title=f"Power demand over time ({', '.join(province)}, "
     f"{selected_types if selected_types is not None else 'Average'} vehicle)",
