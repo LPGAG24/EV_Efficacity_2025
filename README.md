@@ -18,3 +18,16 @@ Then run the tests with:
 ```bash
 pytest -q
 ```
+
+## New features
+
+- Weekend charging profiles can be enabled in the interface via the sidebar
+  checkbox. When activated, home and work arrival distributions are edited
+  specifically for weekend days.
+- Weekend mode now has dedicated default values: later home arrival, later work
+  arrival and weekend driving distances pulled from StatCan data.
+- A calendar viewer is available ("Calendar" expander) which labels each day of
+  the selected year as a weekday or weekend. Statutory holidays are treated as
+  weekends.
+- Selecting a week in the calendar updates the weekly consumption graph with the
+  appropriate mix of weekday and weekend profiles.

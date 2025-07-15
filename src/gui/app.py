@@ -13,6 +13,150 @@ from carRecharge        import *
 from carUsage           import *
 from appHelper          import *
 from data_prep_canada   import fetch_statcan_fleet, download_ckan_resource
+from util.calendar      import build_calendar
+
+
+def _get_shares(prefix: str, visible: bool = True) -> tuple[float, float, float]:
+    """Return home, work and custom charging shares for the given prefix."""
+    key_home = f"home_share_{prefix.lower()}"
+    key_work = f"work_share_{prefix.lower()}"
+    if visible:
+        h_val = st.sidebar.number_input(
+            f"Home charging % ({prefix})",
+            0, 100, st.session_state.get(key_home, 60), step=1, key=key_home,
+        )
+        w_val = st.sidebar.number_input(
+            f"Work charging % ({prefix})",
+            0, 100, st.session_state.get(key_work, 30), step=1, key=key_work,
+        )
+    else:
+        h_val = st.session_state.get(key_home, 60)
+        w_val = st.session_state.get(key_work, 30)
+    total = h_val + w_val
+    scale = 100 / total if total > 100 else 1.0
+    home_share = (h_val * scale) / 100
+    work_share = (w_val * scale) / 100
+    custom_share = 1.0 - home_share - work_share
+    return home_share, work_share, custom_share
+
+
+def _profile_from_state(key: str, mu0: float) -> dict:
+    """Reconstruct arrival profile from session state."""
+    mu = st.session_state.get(f"{key}_mu", mu0)
+    sl = st.session_state.get(f"{key}_sl", 2.0)
+    sr = st.session_state.get(f"{key}_sr", sl)
+    lvl1 = st.session_state.get(f"{key}_lvl1", 100.0)
+    lvl2 = st.session_state.get(f"{key}_lvl2", 0.0)
+    lvl3 = st.session_state.get(f"{key}_lvl3", 0.0)
+    p1 = st.session_state.get(f"{key}_p1", DEFAULT_CHARGER_KW[0])
+    p2 = st.session_state.get(f"{key}_p2", DEFAULT_CHARGER_KW[1])
+    p3 = st.session_state.get(f"{key}_p3", DEFAULT_CHARGER_KW[2])
+    total = lvl1 + lvl2 + lvl3
+    ratios = (
+        (lvl1 / total) if total else 0.0,
+        (lvl2 / total) if total else 0.0,
+        (lvl3 / total) if total else 0.0,
+    )
+    kw = ratios[0] * p1 + ratios[1] * p2 + ratios[2] * p3
+    prof = gaussian_profile(mu, sl, n_res, sr)
+    return {"profile": prof, "kW": kw, "ratios": ratios, "kW_levels": (p1, p2, p3)}
+
+
+def _build_categories(prefix: str, visible: bool = True) -> list[dict]:
+    """Create charging categories for weekday or weekend."""
+    weekend = prefix.lower() == "weekend"
+    home_share, work_share, custom_share = _get_shares(prefix, visible)
+
+    mu_home = 20.0 if weekend else 18.0
+    if visible:
+        home = arrival_profile_editor(
+            f"{prefix} home arrival distribution",
+            n_slots=n_res,
+            mu0=mu_home,
+            sigma0=2.0,
+            ratio0=(100.0, 0.0, 0.0),
+            key=f"home_{prefix.lower()}",
+        )
+    else:
+        home = _profile_from_state(f"home_{prefix.lower()}", mu_home)
+    categories = [
+        {
+            "share": home_share,
+            "profile": home["profile"],
+            "speed": home["kW"],
+            "label": f"Home ({prefix})",
+            "level_kW": home["kW_levels"],
+            "ratios": home["ratios"],
+        }
+    ]
+
+    mu_work = 10.0 if weekend else 9.0
+    if visible:
+        work = arrival_profile_editor(
+            f"{prefix} work arrival distribution",
+            n_slots=n_res,
+            mu0=mu_work,
+            sigma0=2.0,
+            ratio0=(0.0, 100.0, 0.0),
+            key=f"work_{prefix.lower()}",
+        )
+    else:
+        work = _profile_from_state(f"work_{prefix.lower()}", mu_work)
+    categories.append(
+        {
+            "share": work_share,
+            "profile": work["profile"],
+            "speed": work["kW"],
+            "label": f"Work ({prefix})",
+            "level_kW": work["kW_levels"],
+            "ratios": work["ratios"],
+        }
+    )
+
+    if custom_share > 0:
+        if visible:
+            other = arrival_profile_editor(
+                f"{prefix} other arrival distribution",
+                n_slots=n_res,
+                mu0=12.0,
+                sigma0=2.0,
+                ratio0=(100.0, 0.0, 0.0),
+                key=f"other_{prefix.lower()}",
+            )
+        else:
+            other = _profile_from_state(f"other_{prefix.lower()}", 12.0)
+        categories.append(
+            {
+                "share": custom_share,
+                "profile": other["profile"],
+                "speed": other["kW"],
+                "label": f"Other ({prefix})",
+                "level_kW": other["kW_levels"],
+                "ratios": other["ratios"],
+            }
+        )
+
+    return categories
+
+
+def _compute_energy(categories: list[dict]) -> pd.DataFrame:
+    """Return total power dataframe for given categories."""
+    time_bins, n_slots, slot_len = compute_time_bins(n_res, recharge_time)
+    level_power_df = pd.DataFrame({"Time": time_bins})
+    arr_list = []
+    kern_list = []
+    for cat in categories:
+        arr = cat["share"] * car_count * cat["profile"]
+        arr_list.append(arr)
+        kern_list.append(np.full(n_slots, cat["speed"]))
+    if not arr_list:
+        return level_power_df.assign(Agg_kW=0.0, Energy_KWh=0.0)
+    arr_mat = np.column_stack(arr_list)
+    kern_mat = np.column_stack(kern_list)
+    total = aggregate_power(arr_mat, kern_mat)
+    level_power_df["Agg_kW"] = total
+    level_power_df["Energy_KWh"] = total * slot_len
+    return level_power_df
 
 
 # resolution (number of slots in a 24 h day)
@@ -300,8 +444,12 @@ car_count = st.sidebar.number_input(
 # Get avg distance driven per day for that province (use CarUsage or fallback)
 try:
     cu = load_car_usage()
-    dist_per_day = cu[{"Province": province}]  # returns DataFrame
-    avg_distance = dist_per_day[f"{'Weekday' if selected_day in cu.weekdays else 'Weekend'}_km"].values[0]
+    dist_per_day = cu[{"Province": province}]
+    if weekend_mode:
+        day_type = "Weekend"
+    else:
+        day_type = "Weekend" if selected_day in cu.weekends else "Weekday"
+    avg_distance = dist_per_day[f"{day_type}_km"].values[0]
 except Exception:
     avg_distance = 30
 
@@ -328,85 +476,15 @@ except Exception:
 
 # ─────── Custom charging profiles ───────────────────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("Charging profiles")
+weekend_mode = st.sidebar.checkbox("Edit weekend profile", value=False, key="weekend_mode")
 profile_mode = st.sidebar.radio(
     "Mode", ["Normal", "Custom"], horizontal=True, key="profile_mode"
 )
 
 if profile_mode == "Normal":
-    home_share_input = st.sidebar.number_input(
-        "Home charging %", min_value=0, max_value=100, value=60, step=1
-    )
-    work_share_input = st.sidebar.number_input(
-        "Work charging %", min_value=0, max_value=100, value=30, step=1
-    )
-
-    total_input = home_share_input + work_share_input
-    if total_input > 100:
-        st.sidebar.warning("Home + Work share exceeds 100% - values will be scaled")
-        scale = 100 / total_input
-    else:
-        scale = 1.0
-
-    home_share = (home_share_input * scale) / 100
-    work_share = (work_share_input * scale) / 100
-    custom_share = 1.0 - home_share - work_share
-
-    st.sidebar.markdown(f"Custom charging %: {int(round(custom_share * 100))}")
-else:
-    home_share = 0.0
-    work_share = 0.0
-    custom_share = 1.0
-
-
-# ────── Arrival distributions ────────────────────────────────────────────────
-categories = []
-
-if profile_mode == "Normal":
-    home = arrival_profile_editor(
-        "Home arrival distribution",
-        n_slots=n_res,  mu0=18.0,
-        sigma0=2.0,     ratio0=(100.0, 0.0, 0.0),
-        key="home",
-    )
-    categories.append({
-        "share": home_share,
-        "profile": home["profile"],
-        "speed": home["kW"],
-        "label": "Home",
-        "level_kW": home["kW_levels"],
-        "ratios": home["ratios"],
-    })
-
-    work = arrival_profile_editor(
-        "Work arrival distribution",
-        n_slots=n_res,  mu0=9.0,
-        sigma0=2.0,     ratio0=(0.0, 100.0, 0.0),
-        key="work",
-    )
-    categories.append({
-        "share": work_share,
-        "profile": work["profile"],
-        "speed": work["kW"],
-        "label": "Work",
-        "level_kW": work["kW_levels"],
-        "ratios": work["ratios"],
-    })
-    
-    if custom_share > 0:
-        other = arrival_profile_editor(
-            "Other arrival distribution",
-            n_slots=n_res, mu0=12.0,
-            sigma0=2.0, ratio0=(100.0, 0.0, 0.0),
-            key="other",
-        )
-        categories.append({
-            "share": custom_share,
-            "profile": other["profile"],
-            "speed": other["kW"],
-            "label": "Other",
-            "level_kW": other["kW_levels"],
-            "ratios": other["ratios"],
-        })
+    categories_weekday = _build_categories("Weekday", not weekend_mode)
+    categories_weekend = _build_categories("Weekend", weekend_mode)
+    categories = categories_weekend if weekend_mode else categories_weekday
 else:
     plus, minus = st.sidebar.columns(2)
     if plus.button("+"):
@@ -414,6 +492,7 @@ else:
     if minus.button("-") and st.session_state.custom_profile_count > 1:
         st.session_state.custom_profile_count -= 1
 
+    categories = []
     shares = []
     for i in range(st.session_state.custom_profile_count):
         name = st.sidebar.text_input(
@@ -443,6 +522,13 @@ else:
 
     if sum(shares) > 100:
         st.sidebar.warning("Total share exceeds 100%")
+
+    categories_weekday = categories
+    categories_weekend = categories
+
+# compute base power profiles for both day types
+weekday_power_base = _compute_energy(categories_weekday)
+weekend_power_base = _compute_energy(categories_weekend)
 
 # --- Compute charging cars and electric demand ------------------------------
 time_bins, n_slots, slot_len = compute_time_bins(n_res, recharge_time)
@@ -580,14 +666,25 @@ chart_power = (
 )
 st.altair_chart(chart_power, use_container_width=True)
 slot_hours = slot_len
-level_power_df["Energy_KWh"] = level_power_df["Agg_kW"] * slot_hours
-week_days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-hours = np.arange(len(level_power_df)) * slot_hours
+weekday_power_base["Energy_KWh"] = weekday_power_base["Agg_kW"] * slot_hours
+weekend_power_base["Energy_KWh"] = weekend_power_base["Agg_kW"] * slot_hours
+
+with st.expander("Calendar", expanded=False):
+    year = st.number_input("Year", min_value=2000, max_value=2100,
+                           value=int(pd.Timestamp.today().year))
+    cal_df = build_calendar(int(year))
+    week_numbers = sorted(cal_df["Date"].apply(lambda d: d.isocalendar()[1]).unique())
+    week = st.number_input("Week", min_value=int(min(week_numbers)), max_value=int(max(week_numbers)), value=int(week_numbers[0]))
+    st.dataframe(cal_df, use_container_width=True)
+
+week_df = cal_df[cal_df["Date"].apply(lambda d: d.isocalendar()[1]) == week]
+week_days = [d.strftime("%a") for d in week_df["Date"]]
 week_frames = []
-for i, day in enumerate(week_days):
-    df_day = level_power_df[["Energy_KWh"]].copy()
-    df_day["Hour"] = hours + i * 24
-    df_day["Day"] = day
+for i, (_, row) in enumerate(week_df.iterrows()):
+    src = weekend_power_base if row["Type"] == "Weekend" else weekday_power_base
+    df_day = src[["Energy_KWh"]].copy()
+    df_day["Hour"] = np.arange(len(src)) * slot_hours + i * 24
+    df_day["Day"] = row["Date"].strftime("%a")
     week_frames.append(df_day)
 weekly_profile = pd.concat(week_frames, ignore_index=True)
 
