@@ -6,7 +6,7 @@ import altair       as alt
 import urllib.request, json, folium
 
 from streamlit_folium   import st_folium
-from aggregate_power    import aggregate_power
+from aggregate_power    import aggregate_power, circular_convolve
 from carDistribution    import *
 from carEfficiency      import *
 from carRecharge        import *
@@ -450,37 +450,55 @@ time_bins, n_slots, slot_len = compute_time_bins(n_res, recharge_time)
 cars_df = pd.DataFrame({"Time": time_bins})
 power_df = pd.DataFrame({"Time": time_bins})
 level_power_df = pd.DataFrame({"Time": time_bins})
-arrivals_list = []
-kernels_list = []
+
+# accumulate arrival profiles and charging kernels for total demand
+arrivals_list: list[np.ndarray] = []
+kernels_list: list[np.ndarray] = []
+
+# store arrivals and kernels for each charger level
+level_arrivals: dict[str, list[np.ndarray]] = {}
+level_kernels: dict[str, list[np.ndarray]] = {}
 
 for cat in categories:
-    conv = np.convolve(cat["profile"], np.ones(n_slots), mode="same")
-    cars = cat["share"] * car_count * conv
-    cars_df[cat["label"]] = cars
-    power_df[cat["label"]] = cars * cat["speed"]
+    arrivals = cat["share"] * car_count * cat["profile"]
 
-    # accumulate power by charger level
+    # cars charging simultaneously for this category
+    cars = circular_convolve(arrivals, np.ones(n_slots))
+    cars_df[cat["label"]] = cars
+
+    # instantaneous power for this category
+    power_df[cat["label"]] = circular_convolve(
+        arrivals, np.full(n_slots, cat["speed"])
+    )
+
+    # record arrivals and kernels for total demand
+    arrivals_list.append(arrivals)
+    kernels_list.append(np.full(n_slots, cat["speed"]))
+
+    # accumulate arrivals per charger level
     ratios = cat.get("ratios", (1.0, 0.0, 0.0))
     for i, kw in enumerate(cat["level_kW"]):
-        col = f"Level {i+1}"
-        if col not in level_power_df:
-            level_power_df[col] = 0.0
-        level_power_df[col] += cars * ratios[i] * kw
-
-    arrivals_list.append(cat["share"] * car_count * cat["profile"])
-    kernels_list.append(np.full(n_slots, cat["speed"]))
+        level = f"Level {i+1}"
+        level_arrivals.setdefault(level, []).append(arrivals * ratios[i])
+        level_kernels.setdefault(level, []).append(np.full(n_slots, kw))
 
 cars_df["Total_cars"] = cars_df[[c["label"] for c in categories]].sum(axis=1)
 power_df["Total_kW"] = power_df[[c["label"] for c in categories]].sum(axis=1)
 
-level_cols = [c for c in level_power_df.columns if c.startswith("Level ")]
-if level_cols:
-    level_power_df["Total_kW"] = level_power_df[level_cols].sum(axis=1)
-
+# total aggregated power across all categories
 arrivals_mat = np.column_stack(arrivals_list)
 kernels = np.column_stack(kernels_list)
-power_df["Agg_kW"] = aggregate_power(arrivals_mat, kernels)
-level_power_df["Agg_kW"] = power_df["Agg_kW"]
+total_power = aggregate_power(arrivals_mat, kernels)
+
+# compute power demand by charger level
+for level, arr_list in level_arrivals.items():
+    arr_mat = np.column_stack(arr_list)
+    kern_mat = np.column_stack(level_kernels[level])
+    level_power_df[level] = aggregate_power(arr_mat, kern_mat)
+
+level_cols = [c for c in level_power_df.columns if c.startswith("Level ")]
+level_power_df["Agg_kW"] = level_power_df[level_cols].sum(axis=1)
+level_power_df["Agg_kW"] = total_power
 
 categ_vars = [c["label"] for c in categories]
 cars_long = cars_df.melt(
