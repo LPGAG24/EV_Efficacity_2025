@@ -13,6 +13,7 @@ from carRecharge        import *
 from carUsage           import *
 from appHelper          import *
 from data_prep_canada   import fetch_statcan_fleet, download_ckan_resource
+from util.calendar      import build_calendar
 
 
 # resolution (number of slots in a 24 h day)
@@ -300,8 +301,12 @@ car_count = st.sidebar.number_input(
 # Get avg distance driven per day for that province (use CarUsage or fallback)
 try:
     cu = load_car_usage()
-    dist_per_day = cu[{"Province": province}]  # returns DataFrame
-    avg_distance = dist_per_day[f"{'Weekday' if selected_day in cu.weekdays else 'Weekend'}_km"].values[0]
+    dist_per_day = cu[{"Province": province}]
+    if weekend_mode:
+        day_type = "Weekend"
+    else:
+        day_type = "Weekend" if selected_day in cu.weekends else "Weekday"
+    avg_distance = dist_per_day[f"{day_type}_km"].values[0]
 except Exception:
     avg_distance = 30
 
@@ -328,16 +333,18 @@ except Exception:
 
 # ─────── Custom charging profiles ───────────────────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("Charging profiles")
+weekend_mode = st.sidebar.checkbox("Weekend profile", value=False, key="weekend_mode")
 profile_mode = st.sidebar.radio(
     "Mode", ["Normal", "Custom"], horizontal=True, key="profile_mode"
 )
 
 if profile_mode == "Normal":
+    label = "Weekend" if weekend_mode else "Weekday"
     home_share_input = st.sidebar.number_input(
-        "Home charging %", min_value=0, max_value=100, value=60, step=1
+        f"Home charging % ({label})", min_value=0, max_value=100, value=60, step=1
     )
     work_share_input = st.sidebar.number_input(
-        "Work charging %", min_value=0, max_value=100, value=30, step=1
+        f"Work charging % ({label})", min_value=0, max_value=100, value=30, step=1
     )
 
     total_input = home_share_input + work_share_input
@@ -362,48 +369,51 @@ else:
 categories = []
 
 if profile_mode == "Normal":
+    prefix = "Weekend" if weekend_mode else "Weekday"
+    home_mu = 20.0 if weekend_mode else 18.0
     home = arrival_profile_editor(
-        "Home arrival distribution",
-        n_slots=n_res,  mu0=18.0,
+        f"{prefix} home arrival distribution",
+        n_slots=n_res,  mu0=home_mu,
         sigma0=2.0,     ratio0=(100.0, 0.0, 0.0),
-        key="home",
+        key="home_weekend" if weekend_mode else "home",
     )
     categories.append({
         "share": home_share,
         "profile": home["profile"],
         "speed": home["kW"],
-        "label": "Home",
+        "label": f"Home ({prefix})",
         "level_kW": home["kW_levels"],
         "ratios": home["ratios"],
     })
 
+    work_mu = 10.0 if weekend_mode else 9.0
     work = arrival_profile_editor(
-        "Work arrival distribution",
-        n_slots=n_res,  mu0=9.0,
+        f"{prefix} work arrival distribution",
+        n_slots=n_res,  mu0=work_mu,
         sigma0=2.0,     ratio0=(0.0, 100.0, 0.0),
-        key="work",
+        key="work_weekend" if weekend_mode else "work",
     )
     categories.append({
         "share": work_share,
         "profile": work["profile"],
         "speed": work["kW"],
-        "label": "Work",
+        "label": f"Work ({prefix})",
         "level_kW": work["kW_levels"],
         "ratios": work["ratios"],
     })
     
     if custom_share > 0:
         other = arrival_profile_editor(
-            "Other arrival distribution",
+            f"{prefix} other arrival distribution",
             n_slots=n_res, mu0=12.0,
             sigma0=2.0, ratio0=(100.0, 0.0, 0.0),
-            key="other",
+            key="other_weekend" if weekend_mode else "other",
         )
         categories.append({
             "share": custom_share,
             "profile": other["profile"],
             "speed": other["kW"],
-            "label": "Other",
+            "label": f"Other ({prefix})",
             "level_kW": other["kW_levels"],
             "ratios": other["ratios"],
         })
@@ -427,14 +437,14 @@ else:
             f"{name} arrival distribution",
             n_slots=n_res,  mu0=12.0,
             sigma0=2.0, ratio0=(100.0, 0.0, 0.0),
-            key=f"custom_{i}",
+            key=f"custom_{'weekend_' if weekend_mode else ''}{i}",
         )
         categories.append(
             {
                 "share": share / 100,
                 "profile": prof["profile"],
                 "speed": prof["kW"],
-                "label": name,
+                "label": f"{name} ({'Weekend' if weekend_mode else 'Weekday'})",
                 "level_kW": prof["kW_levels"],
                 "ratios": prof["ratios"],
             }
@@ -615,6 +625,12 @@ weekly_chart = (
     .properties(title="Weekly electric consumption", width=700, height=300)
 )
 st.altair_chart(weekly_chart, use_container_width=True)
+
+with st.expander("Calendar", expanded=False):
+    year = st.number_input("Year", min_value=2000, max_value=2100,
+                           value=int(pd.Timestamp.today().year))
+    cal_df = build_calendar(int(year))
+    st.dataframe(cal_df, use_container_width=True)
 
 
 # ── 3 · Canada EV‑share choropleth ──────────────────────────────────────────
