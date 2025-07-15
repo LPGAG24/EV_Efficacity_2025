@@ -52,7 +52,7 @@ def arrival_profile_editor(                 # compact UI helper
     power0=DEFAULT_CHARGER_KW,
     key="home",
 ):
-    with st.expander(title, expanded=True):
+    with st.expander(title, expanded=False):
         k = lambda s: f"{key}_{s}"             # unique Streamlit keys
         with st.container(border=True):
             st.subheader(f"{title} (editable)")
