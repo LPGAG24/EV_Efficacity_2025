@@ -369,9 +369,12 @@ if profile_mode == "Normal":
         key="home",
     )
     categories.append({
-        "share": home_share,    "profile": home["profile"],
-        "speed": home["kW"],    "label": "Home",
+        "share": home_share,
+        "profile": home["profile"],
+        "speed": home["kW"],
+        "label": "Home",
         "level_kW": home["kW_levels"],
+        "ratios": home["ratios"],
     })
 
     work = arrival_profile_editor(
@@ -381,9 +384,12 @@ if profile_mode == "Normal":
         key="work",
     )
     categories.append({
-        "share": work_share,    "profile": work["profile"],
-        "speed": work["kW"],    "label": "Work",
+        "share": work_share,
+        "profile": work["profile"],
+        "speed": work["kW"],
+        "label": "Work",
         "level_kW": work["kW_levels"],
+        "ratios": work["ratios"],
     })
     
     if custom_share > 0:
@@ -394,9 +400,12 @@ if profile_mode == "Normal":
             key="other",
         )
         categories.append({
-            "share": custom_share, "profile": other["profile"],
-            "speed": other["kW"],   "label": "Other",
+            "share": custom_share,
+            "profile": other["profile"],
+            "speed": other["kW"],
+            "label": "Other",
             "level_kW": other["kW_levels"],
+            "ratios": other["ratios"],
         })
 else:
     plus, minus = st.sidebar.columns(2)
@@ -422,9 +431,12 @@ else:
         )
         categories.append(
             {
-                "share": share / 100,   "profile": prof["profile"],
-                "speed": prof["kW"],    "label": name,
+                "share": share / 100,
+                "profile": prof["profile"],
+                "speed": prof["kW"],
+                "label": name,
                 "level_kW": prof["kW_levels"],
+                "ratios": prof["ratios"],
             }
         )
         shares.append(share)
@@ -437,6 +449,7 @@ time_bins, n_slots, slot_len = compute_time_bins(n_res, recharge_time)
 
 cars_df = pd.DataFrame({"Time": time_bins})
 power_df = pd.DataFrame({"Time": time_bins})
+level_power_df = pd.DataFrame({"Time": time_bins})
 arrivals_list = []
 kernels_list = []
 
@@ -445,19 +458,33 @@ for cat in categories:
     cars = cat["share"] * car_count * conv
     cars_df[cat["label"]] = cars
     power_df[cat["label"]] = cars * cat["speed"]
+
+    # accumulate power by charger level
+    ratios = cat.get("ratios", (1.0, 0.0, 0.0))
+    for i, kw in enumerate(cat["level_kW"]):
+        col = f"Level {i+1}"
+        if col not in level_power_df:
+            level_power_df[col] = 0.0
+        level_power_df[col] += cars * ratios[i] * kw
+
     arrivals_list.append(cat["share"] * car_count * cat["profile"])
     kernels_list.append(np.full(n_slots, cat["speed"]))
 
 cars_df["Total_cars"] = cars_df[[c["label"] for c in categories]].sum(axis=1)
 power_df["Total_kW"] = power_df[[c["label"] for c in categories]].sum(axis=1)
 
+level_cols = [c for c in level_power_df.columns if c.startswith("Level ")]
+if level_cols:
+    level_power_df["Total_kW"] = level_power_df[level_cols].sum(axis=1)
+
 arrivals_mat = np.column_stack(arrivals_list)
 kernels = np.column_stack(kernels_list)
 power_df["Agg_kW"] = aggregate_power(arrivals_mat, kernels)
+level_power_df["Agg_kW"] = power_df["Agg_kW"]
 
-value_vars = [c["label"] for c in categories]
+categ_vars = [c["label"] for c in categories]
 cars_long = cars_df.melt(
-    id_vars="Time", value_vars=value_vars, var_name="Source", value_name="Cars"
+    id_vars="Time", value_vars=categ_vars, var_name="Source", value_name="Cars"
 )
 cars_long["Cars_thousands"] = cars_long["Cars"] / 1000
 chart_cars = (
@@ -482,8 +509,10 @@ chart_cars = (
 )
 st.altair_chart(chart_cars, use_container_width=True)
 
-power_long = power_df.melt(id_vars="Time", value_vars=value_vars,
-                           var_name="Source", value_name="kW")
+level_vars = [c for c in level_power_df.columns if c.startswith("Level ")]
+power_long = level_power_df.melt(
+    id_vars="Time", value_vars=level_vars, var_name="Charger Level", value_name="kW"
+)
 
 area_chart = alt.Chart(power_long).mark_line(color="blue").encode(
     x=alt.X("Time", sort=None),
@@ -493,11 +522,11 @@ area_chart = alt.Chart(power_long).mark_line(color="blue").encode(
         title="Power (kW)",
         axis=alt.Axis(format="~s"),
     ),
-    color=alt.Color("Source", title="Charging location"),
+    color=alt.Color("Charger Level", title="Charger level"),
 )
 
 line_chart = (
-    alt.Chart(power_df)
+    alt.Chart(level_power_df)
     .mark_area(opacity=0.5)
     .encode(
         x="Time",
@@ -515,12 +544,12 @@ chart_power = (
 )
 st.altair_chart(chart_power, use_container_width=True)
 slot_hours = slot_len
-power_df["Energy_kWh"] = power_df["Agg_kW"] * slot_hours
+level_power_df["Energy_KWh"] = level_power_df["Agg_kW"] * slot_hours
 week_days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-hours = np.arange(len(power_df)) * slot_hours
+hours = np.arange(len(level_power_df)) * slot_hours
 week_frames = []
 for i, day in enumerate(week_days):
-    df_day = power_df[["Energy_kWh"]].copy()
+    df_day = level_power_df[["Energy_KWh"]].copy()
     df_day["Hour"] = hours + i * 24
     df_day["Day"] = day
     week_frames.append(df_day)
@@ -541,7 +570,7 @@ weekly_chart = (
             ),
         ),
         y=alt.Y(
-            "Energy_kWh",
+            "Energy_KWh",
             title="Energy (kWh)",
             axis=alt.Axis(format="~s"),
         ),
