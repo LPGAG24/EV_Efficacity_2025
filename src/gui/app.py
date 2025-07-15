@@ -560,15 +560,13 @@ fleet_total = (
         (fleet_df["Fuel Type"] == "All fuel types") &
         (fleet_df["Vehicle Type"]        == "Light‑duty vehicle")
     ]
-    .groupby("Province")["Vehicles nb"].sum()
+    .groupby("Province",observed=True)["Vehicles nb"].sum()
 )
 
 bev_total = (
     fleet_df[
-        (fleet_df["Fuel Type"] == "Battery‑electric") &
-        (fleet_df["Vehicle Type"]        == "Light‑duty vehicle")
-    ]
-    .groupby("Province")["Vehicles nb"].sum()
+        (fleet_df["Fuel Type"] == "Battery‑electric") & (fleet_df["Vehicle Type"] == "Light‑duty vehicle")
+    ].groupby("Province", observed=True)["Vehicles nb"].sum()
 )
 
 ev_share = (bev_total / fleet_total * 100).fillna(0).round(2)  # %

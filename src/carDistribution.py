@@ -135,7 +135,7 @@ class CarDistribution:
         
         cols_key   = ["Province", "Vehicle Type", "Fuel Type"]
         self.data  = (self.data
-              .groupby(cols_key, as_index=False)
+              .groupby(cols_key, as_index=False, observed=True)
               .agg({"Vehicles nb": "sum"}))
 
 
