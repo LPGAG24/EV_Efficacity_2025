@@ -220,6 +220,17 @@ class CarDistribution:
             }
         return pd.DataFrame.from_dict(filtered, orient="index", columns=["Percent"])
 
+    def get_vehicle_count(self, province: str | None = None) -> pd.DataFrame:
+        """Return vehicle counts by type for the specified province."""
+        df = self.data
+        if province is not None:
+            df = df[df["Province"] == province]
+        counts = (
+            df.groupby("Vehicle Type", as_index=False)["Vehicles nb"].sum()
+            .rename(columns={"Vehicles nb": "Count"})
+        )
+        return counts
+
 
     def switch_province(self, Province: str):
         self.Province = Province

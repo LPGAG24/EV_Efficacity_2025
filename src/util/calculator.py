@@ -52,3 +52,32 @@ def calculate_grid_power(
 
     return float(total_charging_power)
 
+
+def validate_home_work_percent(home_percent: float, work_percent: float) -> tuple[float, float, float]:
+    """Normalize home and work charging percentages.
+
+    Parameters
+    ----------
+    home_percent : float
+        Percentage of charging occurring at home (0-100).
+    work_percent : float
+        Percentage of charging occurring at work (0-100).
+
+    Returns
+    -------
+    tuple of float
+        Normalized fractions ``(home, work, custom)`` that sum to 1. ``custom``
+        represents any remaining share not attributed to home or work.
+    """
+
+    if home_percent < 0 or work_percent < 0:
+        raise ValueError("Percentages must be non-negative")
+
+    total = home_percent + work_percent
+    scale = 1.0 if total <= 100 else 100 / total
+
+    home  = home_percent * scale / 100.0
+    work  = work_percent * scale / 100.0
+    custom = 1.0 - home - work
+    return home, work, custom
+

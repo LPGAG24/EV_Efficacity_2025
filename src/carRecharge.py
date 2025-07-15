@@ -101,6 +101,15 @@ class CarRecharge:
             for hour, perc in enumerate(profile):
                 records.append({"Day": day, "Hour": hour, "ChargingPerc": perc})
         return pd.DataFrame(records)
+
+    def get_weekend_profile(self) -> pd.DataFrame:
+        """Return aggregated weekday and weekend charging profiles."""
+        df = self.get_weekly_profile()
+        df["DayType"] = np.where(df["Day"].isin(self.weekends), "Weekend", "Weekday")
+        grouped = (
+            df.groupby(["DayType", "Hour"], as_index=False)["ChargingPerc"].mean()
+        )
+        return grouped
     
     def get_hourly_profile(self, day: str) -> list[float]:
         return self.charging_profile[day]
