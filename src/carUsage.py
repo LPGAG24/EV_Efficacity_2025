@@ -218,21 +218,30 @@ class CarUsage:
 
 
 
-from stats_can import StatsCan
+import warnings
 import pandas as pd
+from stats_can.sc import table_to_df
+try:  # StatsCan <3 compatibility
+    from stats_can.sc import vectors_to_df_remote
+except ImportError:  # pragma: no cover - old stats_can
+    from stats_can.sc import vectors_to_df as vectors_to_df_remote
+warnings.filterwarnings(
+    "ignore",
+    message=r"This function will be deprecated in the v3 release",
+    category=FutureWarning,
+    module=r"stats_can.sc",
+)
 
 def fetch_statcan_distance():
-    sc = StatsCan()
-    t_part = sc.table_to_df("45-10-0104-03")
+    """Fetch commute distance distribution table."""
+    t_part = table_to_df("45-10-0104-03")
     return t_part
 
-def fetch_statcan(link:str) -> pd.DataFrame:
+def fetch_statcan(link: str) -> pd.DataFrame:
     """
     Fetch a StatCan table by link, return DataFrame.
     """
-    sc = StatsCan()
-    sc.delete_tables(link)
-    tbl = sc.table_to_df(link)
+    tbl = table_to_df(link)
     if tbl.empty:
         raise ValueError(f"No data found for {link}")
     return tbl
@@ -318,9 +327,8 @@ def fetch_statcan_daily_drivers():
     
     Currently using Canada-wide participation rate and population data.
     """
-    sc = StatsCan()
     # --- 1. Participation rate table: 45-10-0104-03 ---
-    t_part = sc.table_to_df("45-10-0104-03")
+    t_part = table_to_df("45-10-0104-03")
     # Filter for 'Private vehicle, driver' and 'Participation rate'
     part = t_part[(t_part["Activity group"] == "Sleep and personal activities") &
                   (t_part["Statistics"] == "Participation rate") &
@@ -332,7 +340,7 @@ def fetch_statcan_daily_drivers():
 
 
     # --- 2. Provincial populations from 17-10-0005-01 ---
-    t_pop = sc.table_to_df("17-10-0005-01")
+    t_pop = table_to_df("17-10-0005-01")
     # Filter for both sexes, all ages, 2022-07-01
     t_pop["REF_DATE"] = pd.to_datetime(t_pop["REF_DATE"])
     latest_date = t_pop["REF_DATE"].max()
@@ -354,7 +362,6 @@ def fetch_statcan_time_to_work():
     # Need to retreive the file from statcan but not already in stats_can.
     # retreive it in csv before
     pass
-    sc = StatsCan()
     
     
 
@@ -386,19 +393,8 @@ if __name__ == "__main__":
             df = pd.read_csv("C:/Users/lpgag/Downloads/98100461-eng/98100461.csv")
             print(df.head())
         case 5:
-            import stats_can as sc
-            from stats_can import api_class as scapi
-            PROVINCES = [
-                "Newfoundland and Labrador", "Prince Edward Island", "Nova Scotia",
-                "New Brunswick", "Quebec", "Ontario", "Manitoba",
-                "Saskatchewan", "Alberta", "British Columbia"
-            ]
-
-            api = scapi.StatsCan()
-            # 1️⃣  metadata for the table
-            meta = api.vector_metadata(api.table_to_df("98-10-0462-01").columns)
-            # 2️⃣  pick vectors where the metadata GEO is one of the provinces
-            prov_vecs = [m["vector"] for m in meta if m["GEO"] in PROVINCES]
-            # 3️⃣  pull only those series (fast JSON call, a few KB)
-            df_small = sc.sc.vectors_to_df_remote(prov_vecs, periods=120)   # last 120 periods
+            # Example retrieving vectors using module-level helpers only.
+            # Vector metadata normally requires the StatsCan class, which is
+            # deprecated in v3, so this example is omitted.
+            pass
 

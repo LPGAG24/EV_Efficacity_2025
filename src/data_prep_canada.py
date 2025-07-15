@@ -114,15 +114,25 @@ def download_ckan_resource(
     return df
 
 # ─── StatCan settings ───────────────────────────────────────────────────────
-from stats_can import StatsCan
+import warnings
+from stats_can.sc import table_to_df
+try:  # StatsCan <3 compatibility
+    from stats_can.sc import vectors_to_df_remote
+except ImportError:  # pragma: no cover - old stats_can
+    from stats_can.sc import vectors_to_df as vectors_to_df_remote
+warnings.filterwarnings(
+    "ignore",
+    message=r"This function will be deprecated in the v3 release",
+    category=FutureWarning,
+    module=r"stats_can.sc",
+)
 
 def fetch_statcan_fleet(table_id: str = "23-10-0308-01") -> pd.DataFrame:
     """
     Use stats-can to pull the full vehicle-registration table,
     then pivot to one row per province with total stock for latest year.
     """
-    sc = StatsCan()
-    tbl = sc.table_to_df(table_id)
+    tbl = table_to_df(table_id)
 
     latest_year = tbl["REF_DATE"].max()
     fleet = tbl[
@@ -139,12 +149,11 @@ def fetch_statcan_fleet(table_id: str = "23-10-0308-01") -> pd.DataFrame:
     print(f"[StatCan] {table_id} | REF_DATE={latest_year}")
     return fleet
 
-def fetch_statcan(link:str)->pd.DataFrame:
+def fetch_statcan(link: str) -> pd.DataFrame:
     """
     Fetch a StatCan table by link, return DataFrame.
     """
-    sc = StatsCan()
-    tbl = sc.table_to_df(link)
+    tbl = table_to_df(link)
     if tbl.empty:
         raise ValueError(f"No data found for {link}")
     return tbl
