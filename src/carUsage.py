@@ -207,14 +207,11 @@ class CarUsage:
         raise TypeError("Key must be str, list/slice, tuple, dict, or callable.")
     
     
-    def get_daily_driver_counts(self):
-        """
-        Fetches and attaches the DataFrame (Province, DayType, Drivers) as
-        self.daily_drivers. Use .loc[province, daytype] or filter as needed.
-        """
-        df = fetch_statcan_daily_drivers()
-        self.daily_drivers = df[df["Province"]=="Canada"]["Drivers"]
-        return self.daily_drivers
+    # def get_daily_driver_counts(self):
+    #     """Fetch and attach daily driver counts."""
+    #     df = fetch_statcan_daily_drivers()
+    #     self.daily_drivers = df[df["Province"] == "Canada"]["Drivers"]
+    #     return self.daily_drivers
 
 
 
@@ -232,19 +229,17 @@ warnings.filterwarnings(
     module=r"stats_can.sc",
 )
 
-def fetch_statcan_distance():
-    """Fetch commute distance distribution table."""
-    t_part = table_to_df("45-10-0104-03")
-    return t_part
+# def fetch_statcan_distance():
+#     """Fetch commute distance distribution table."""
+#     t_part = table_to_df("45-10-0104-03")
+#     return t_part
 
-def fetch_statcan(link: str) -> pd.DataFrame:
-    """
-    Fetch a StatCan table by link, return DataFrame.
-    """
-    tbl = table_to_df(link)
-    if tbl.empty:
-        raise ValueError(f"No data found for {link}")
-    return tbl
+# def fetch_statcan(link: str) -> pd.DataFrame:
+#     """Fetch a StatCan table by link, return DataFrame."""
+#     tbl = table_to_df(link)
+#     if tbl.empty:
+#         raise ValueError(f"No data found for {link}")
+#     return tbl
 
 
 
@@ -283,14 +278,14 @@ def _gaussian_from_percent(
     return x, y
 
 
-def time_to_distance(
-    x_time: np.ndarray, y_time: np.ndarray, speed_kmh: float = 70.0
-) -> tuple[np.ndarray, np.ndarray]:
-    """Convert a time distribution to distance (km) at constant speed."""
-    k = speed_kmh / 60.0
-    x_dist = x_time * k
-    y_dist = y_time / k  # change-of-variable scaling
-    return x_dist, y_dist
+# def time_to_distance(
+#     x_time: np.ndarray, y_time: np.ndarray, speed_kmh: float = 70.0
+# ) -> tuple[np.ndarray, np.ndarray]:
+#     """Convert a time distribution to distance (km) at constant speed."""
+#     k = speed_kmh / 60.0
+#     x_dist = x_time * k
+#     y_dist = y_time / k  # change-of-variable scaling
+#     return x_dist, y_dist
 
 
 def gaussian_private_vehicle(
@@ -306,62 +301,47 @@ def gaussian_private_vehicle(
     return pd.DataFrame({"Time": x, "Density": y})
 
 
-def plot_private_vehicle_gaussian(province: str = "Canada") -> None:
-    """Plot gaussian curve using matplotlib if available."""
-    if plt is None:
-        raise ImportError("matplotlib is required for plotting")
-    df = gaussian_private_vehicle(province)
-    plt.figure(figsize=(6, 4))
-    plt.plot(df["Time"], df["Density"], label=province)
-    plt.title(f"Private vehicle daily average time\n{province} - 2022")
-    plt.xlabel("Daily average time (minutes)")
-    plt.ylabel("Density")
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+# def plot_private_vehicle_gaussian(province: str = "Canada") -> None:
+#     """Plot gaussian curve using matplotlib if available."""
+#     if plt is None:
+#         raise ImportError("matplotlib is required for plotting")
+#     df = gaussian_private_vehicle(province)
+#     plt.figure(figsize=(6, 4))
+#     plt.plot(df["Time"], df["Density"], label=province)
+#     plt.title(f"Private vehicle daily average time\n{province} - 2022")
+#     plt.xlabel("Daily average time (minutes)")
+#     plt.ylabel("Density")
+#     plt.legend()
+#     plt.tight_layout()
+#     plt.show()
 
-def fetch_statcan_daily_drivers():
-    """
-    Fetches, for each province, the number of people who drove a car on a typical weekday/weekend day in 2022.
-    Returns a DataFrame: Province | DayType | Drivers
-    
-    Currently using Canada-wide participation rate and population data.
-    """
-    # --- 1. Participation rate table: 45-10-0104-03 ---
-    t_part = table_to_df("45-10-0104-03")
-    # Filter for 'Private vehicle, driver' and 'Participation rate'
-    part = t_part[(t_part["Activity group"] == "Sleep and personal activities") &
-                  (t_part["Statistics"] == "Participation rate") &
-                  (t_part["Age group"] == "Total, 15 years and over") &
-                  (t_part["Gender"] == "Total, all persons")]
-    # We want: GEO, Type of day, VALUE (is %), REF_DATE (should be 2022)
-    part = part.rename(columns={"GEO": "Province", "VALUE": "PartRate"})
-    part = part[["Province", "PartRate"]]
-
-
-    # --- 2. Provincial populations from 17-10-0005-01 ---
-    t_pop = table_to_df("17-10-0005-01")
-    # Filter for both sexes, all ages, 2022-07-01
-    t_pop["REF_DATE"] = pd.to_datetime(t_pop["REF_DATE"])
-    latest_date = t_pop["REF_DATE"].max()
-    pop = t_pop[
-        (t_pop["REF_DATE"] == latest_date) &
-        (t_pop["Gender"] == "Total - gender") &
-        (t_pop["Age group"] == "All ages")
-    ].rename(columns={"GEO": "Province", "VALUE": "Population"})
-    pop = pop[["Province", "Population"]]
-    pop = pop[pop["Province"] == "Canada"]
-    # --- 3. Merge and compute daily drivers ---
-    merged = part.merge(pop, on="Province", how="left")
-    merged["Drivers"] = (merged["Population"][0] * merged["PartRate"] / 100).round().astype(int)
-    merged = merged[["Province","Drivers"]]
-    return merged
+# def fetch_statcan_daily_drivers():
+#     """Fetch daily driver counts per province."""
+#     t_part = table_to_df("45-10-0104-03")
+#     part = t_part[(t_part["Activity group"] == "Sleep and personal activities") &
+#                   (t_part["Statistics"] == "Participation rate") &
+#                   (t_part["Age group"] == "Total, 15 years and over") &
+#                   (t_part["Gender"] == "Total, all persons")]
+#     part = part.rename(columns={"GEO": "Province", "VALUE": "PartRate"})
+#     part = part[["Province", "PartRate"]]
+#     t_pop = table_to_df("17-10-0005-01")
+#     t_pop["REF_DATE"] = pd.to_datetime(t_pop["REF_DATE"])
+#     latest_date = t_pop["REF_DATE"].max()
+#     pop = t_pop[(t_pop["REF_DATE"] == latest_date) &
+#                 (t_pop["Gender"] == "Total - gender") &
+#                 (t_pop["Age group"] == "All ages")]
+#     pop = pop.rename(columns={"GEO": "Province", "VALUE": "Population"})
+#     pop = pop[["Province", "Population"]]
+#     pop = pop[pop["Province"] == "Canada"]
+#     merged = part.merge(pop, on="Province", how="left")
+#     merged["Drivers"] = (merged["Population"][0] * merged["PartRate"] / 100).round().astype(int)
+#     merged = merged[["Province", "Drivers"]]
+#     return merged
 
 
-def fetch_statcan_time_to_work():
-    # Need to retreive the file from statcan but not already in stats_can.
-    # retreive it in csv before
-    pass
+# def fetch_statcan_time_to_work():
+#     """Placeholder for future StatCan commute time data."""
+#     pass
     
     
 
