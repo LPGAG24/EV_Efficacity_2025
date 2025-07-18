@@ -222,12 +222,12 @@ class CarDistribution:
 
 
     def switch_province(self, Province: str):
+        """Switch active province and recompute internal ratios.
+
+        Currently unused but kept for potential interactive features."""
         self.Province = Province
         self.set_fuel_type_percent()
         self.set_fuel_type_percent_by_vehicle()
-        
-    def __call__(self) -> pd.DataFrame:
-        return self.data
 
 
 if __name__ == "__main__":
