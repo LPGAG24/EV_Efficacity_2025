@@ -142,7 +142,7 @@ class CarRecharge:
     def _pick_slots(self, prob48: np.ndarray, n: int) -> np.ndarray:
         return np.random.choice(np.arange(48), size=n, p=prob48)
 
-    def simulate(self, *, car_usage, efficiency_wh_per_km: float = 150.0,
+    def simulate(self, efficiency_wh_per_km: float = 150.0,
                  start_date: datetime = None, n_days: int = 7,
                  source: str = "Residential") -> pd.DataFrame:
         if start_date is None:
@@ -158,7 +158,7 @@ class CarRecharge:
             prob48 = self.get_30min_profile(day_name)
             slots  = self._pick_slots(prob48, n_sessions)
             for slot in slots:
-                ts  = day_date + timedelta(minutes=30*slot)
+                ts  = day_date + timedelta(minutes=30*int(slot))
                 records.append({
                     "Timestamp"  : ts,
                     "Day"        : day_name,
@@ -216,3 +216,121 @@ def gaussian_profile(
     sigma = np.where(delta < 0, sigma_left, sigma_right)
     prof = np.exp(-(delta**2) / (2 * sigma**2))
     return prof / prof.sum()
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+
+    cr = CarRecharge()
+    print("Select test case:")
+    print("1: get_weekly_profile / get_hourly_profile / get_30min_profile")
+    print("2: sample_energy_kwh")
+    print("3: sample_charging_duration_h")
+    print("4: sample_frequency_per_day")
+    print("5: scale_profile")
+    print("6: simulate")
+    print("7: gaussian_profile")
+    print("8: plot default weekly profile")
+    print("9: run all tests with plots")
+    choice = int(input("Enter case number: "))
+
+    match choice:
+        case 1:
+            # hourly + 30-min profile for Monday
+            hourly = cr.get_hourly_profile("Monday")
+            halfh  = cr.get_30min_profile("Monday")
+            fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+            axes[0].plot(range(24), hourly, marker='o')
+            axes[0].set(title="Hourly Profile (Monday)", xlabel="Hour", ylabel="Prob")
+            axes[1].plot(np.linspace(0, 23.5, 48), halfh, marker='.')
+            axes[1].set(title="30-min Profile (Monday)", xlabel="Hour", ylabel="Prob")
+            plt.tight_layout()
+            plt.show()
+
+        case 2:
+            # histogram of 1000 sampled energies
+            samples = [cr.sample_energy_kwh() for _ in range(1000)]
+            plt.hist(samples, bins=30, color='skyblue', edgecolor='black')
+            plt.title("Sampled Energy (kWh) Distribution")
+            plt.xlabel("kWh")
+            plt.ylabel("Count")
+            plt.show()
+
+        case 3:
+            # histogram of 1000 sampled durations
+            samples = [cr.sample_charging_duration_h() for _ in range(1000)]
+            plt.hist(samples, bins=30, color='lightgreen', edgecolor='black')
+            plt.title("Sampled Charging Duration (h) Distribution")
+            plt.xlabel("Hours")
+            plt.ylabel("Count")
+            plt.show()
+
+        case 4:
+            # histogram of 1000 sampled frequencies
+            samples = [cr.sample_frequency_per_day() for _ in range(1000)]
+            plt.hist(samples, bins=range(0, max(samples)+2), align='left',
+                     color='salmon', edgecolor='black')
+            plt.title("Sampled Charging Sessions per Day")
+            plt.xlabel("Sessions")
+            plt.ylabel("Count")
+            plt.show()
+
+        case 5:
+            # before / after scaling for Monday
+            before = cr.get_hourly_profile("Monday")
+            cr.scale_profile(["Monday"], factor=1.5)
+            after = cr.get_hourly_profile("Monday")
+            hours = range(24)
+            plt.plot(hours, before, '-o', label="Before")
+            plt.plot(hours, after,  '-x', label="After")
+            plt.title("Scale Profile Effect (Monday)")
+            plt.xlabel("Hour")
+            plt.ylabel("Prob")
+            plt.legend()
+            plt.show()
+
+        case 6:
+            # scatter of simulated events energy vs timestamp
+            sim_df = cr.simulate(n_days=2)
+            plt.figure(figsize=(10, 4))
+            plt.scatter(sim_df["Timestamp"], sim_df["Energy_kWh"], c='blue')
+            plt.title("Simulated Charging Events: Energy vs Time")
+            plt.xlabel("Timestamp")
+            plt.ylabel("Energy (kWh)")
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.show()
+
+        case 7:
+            # plot the gaussian_profile
+            prof = gaussian_profile(mu=12.0, sigma_left=2.0, n=24)
+            hours = np.linspace(0, 24, 24, endpoint=False)
+            plt.plot(hours, prof, '-o')
+            plt.title("Gaussian Profile (24 bins)")
+            plt.xlabel("Hour")
+            plt.ylabel("Prob")
+            plt.show()
+
+        case 8:
+            # existing weekly‐profile plot
+            profile_df = cr.get_weekly_profile()
+            plt.figure(figsize=(10, 6))
+            for day in cr.weekdays + cr.weekends:
+                sub = profile_df[profile_df["Day"] == day]
+                plt.plot(sub["Hour"], sub["ChargingPerc"], label=day)
+            plt.title("Default EV Charging Profile")
+            plt.xlabel("Hour of Day")
+            plt.ylabel("Charging Probability")
+            plt.legend()
+            plt.grid(True)
+            plt.show()
+
+        case 9:
+            # simplified: no recursive exec
+            print("Running all tests in sequence:")
+            for c in range(1, 9):
+                print(f" – would run case {c}")
+            print("Done all plots.")
+
+        case _:
+            print("Invalid choice.")

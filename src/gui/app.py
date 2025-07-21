@@ -6,7 +6,7 @@ import altair       as alt
 import urllib.request, json, folium
 
 from streamlit_folium   import st_folium
-from aggregate_power    import aggregate_power, circular_convolve
+
 from carDistribution    import *
 from carEfficiency      import *
 from carRecharge        import *

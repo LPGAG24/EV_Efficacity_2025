@@ -222,6 +222,7 @@ try:  # StatsCan <3 compatibility
     from stats_can.sc import vectors_to_df_remote
 except ImportError:  # pragma: no cover - old stats_can
     from stats_can.sc import vectors_to_df as vectors_to_df_remote
+import pandas as pd
 warnings.filterwarnings(
     "ignore",
     message=r"This function will be deprecated in the v3 release",
@@ -348,33 +349,74 @@ def gaussian_private_vehicle(
 
 
 if __name__ == "__main__":
-    car_usage = CarUsage()
-    car_usage.fetchData()
-    
-    case:int = 5
-        # Print Quebec weekday and weekend
-    match case:
+
+    # sample data for testing set_data, averages and recharge calculations
+    sample_df = pd.DataFrame({
+        "Day": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+        "Distance_km": [10, 20, 30, 40, 50, 60, 70],
+    })
+
+    car = CarUsage()
+
+    print("Choose a test case:")
+    print("1: test set_data and average_daily_distance")
+    print("2: test set_average")
+    print("3: test recharge_needed and set_recharge_needed")
+    print("4: test fetchData and __getitem__")
+    print("5: run all tests")
+    choice = int(input("Enter case number: "))
+
+    match choice:
         case 1:
-            daily_drivers = car_usage.get_daily_driver_counts()
-            print("Quebec weekday drivers:", daily_drivers)
-            print("Quebec weekend drivers:", daily_drivers)
-            print(car_usage.daily_drivers)
+            car.set_data(sample_df)
+            print("average_daily_distance():", car.average_daily_distance())
+
         case 2:
-            t_part = fetch_statcan_distance()
-            t_second = t_part[(t_part["Age group"] == "Total, 15 years and over") &
-                   (t_part["GEO"] == "Canada") &
-                   (t_part["Activity group"] == "Sleep and personal activities") &
-                   (t_part["Gender"] == "Total, all persons")]
-            print(t_second)
+            # set a single float average
+            car.set_average(42.0)
+            print("averages after float:", car.averages)
+            # set a list of averages
+            car.set_average([5, 6, 7, 8, 9, 10, 11])
+            print("averages after list:", car.averages)
+
         case 3:
-            fetch_statcan("98-10-0461-01")
+            car.set_data(sample_df)
+            print("recharge_needed(150):", car.recharge_needed(150))
+            car.set_recharge_needed(150, "Monday")
+
         case 4:
-            #retrieve info from a csv
-            df = pd.read_csv("C:/Users/lpgag/Downloads/98100461-eng/98100461.csv")
-            print(df.head())
+            car.fetchData()
+            print("first rows of fetched data:\n", car.data.head())
+            print("getitem by province 'QC':\n", car["QC"])
+            print("getitem by (province, year):\n", car[("QC", 2022)])
+            print("getitem by dict filter:\n", car[{"Province": "QC"}])
+            # a custom callable
+            filtered = car[lambda df: df[df["Annual_km"] > 20000]]
+            print("callable filter >20000 Annual_km:\n", filtered)
+
         case 5:
-            # Example retrieving vectors using module-level helpers only.
-            # Vector metadata normally requires the StatsCan class, which is
-            # deprecated in v3, so this example is omitted.
-            pass
+            # run every function in sequence
+            print("1) set_data & average_daily_distance")
+            car.set_data(sample_df)
+            print(car.average_daily_distance())
+
+            print("\n2) set_average")
+            car.set_average(50.0)
+            car.set_average([1, 2, 3, 4, 5, 6, 7])
+            print(car.averages)
+
+            print("\n3) recharge_needed & set_recharge_needed")
+            print(car.recharge_needed(120))
+            car.set_recharge_needed(120, "Tuesday")
+
+            print("\n4) fetchData & __getitem__")
+            car.fetchData()
+            print(car.data.head())
+            print(car["ON"])
+            print(car[("CA", 2022)])
+            print(car[{"Year": 2022}])
+            print(car[lambda df: df["Weekday_km"] > df["Weekend_km"]])
+
+        case _:
+            print("Invalid choice. Exiting.")
 
