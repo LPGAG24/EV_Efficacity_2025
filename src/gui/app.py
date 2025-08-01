@@ -11,6 +11,7 @@ from carDistribution    import *
 from carEfficiency      import *
 from carRecharge        import *
 from carUsage           import *
+from traitlets import default
 from appHelper          import *
 from data_prep_canada   import fetch_statcan_fleet, download_ckan_resource
 from util.calendar      import build_calendar
@@ -674,7 +675,14 @@ with st.expander("Calendar", expanded=False):
                            value=int(pd.Timestamp.today().year))
     cal_df = build_calendar(int(year))
     week_numbers = sorted(cal_df["Date"].apply(lambda d: d.isocalendar()[1]).unique())
-    week = st.number_input("Week", min_value=int(min(week_numbers)), max_value=int(max(week_numbers)), value=int(week_numbers[0]))
+    today_iso_week = pd.Timestamp.today().isocalendar()[1]
+    default_week = today_iso_week if today_iso_week in week_numbers else week_numbers[0]
+    week = st.number_input(
+        "Week",
+        min_value=int(min(week_numbers)),
+        max_value=int(max(week_numbers)),
+        value=int(default_week),
+        step=1,)
     st.dataframe(cal_df, use_container_width=True)
 
 week_df = cal_df[cal_df["Date"].apply(lambda d: d.isocalendar()[1]) == week]
