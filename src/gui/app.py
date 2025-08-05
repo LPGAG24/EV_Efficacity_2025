@@ -151,12 +151,12 @@ def _compute_energy(categories: list[dict]) -> pd.DataFrame:
         arr_list.append(arr)
         kern_list.append(np.full(n_slots, cat["speed"]))
     if not arr_list:
-        return level_power_df.assign(Agg_kW=0.0, Energy_KWh=0.0)
+        return level_power_df.assign(Agg_kW=0.0, Energy_Wh=0.0)
     arr_mat = np.column_stack(arr_list)
     kern_mat = np.column_stack(kern_list)
     total = aggregate_power(arr_mat, kern_mat)
     level_power_df["Agg_kW"] = total
-    level_power_df["Energy_KWh"] = total * slot_len
+    level_power_df["Energy_Wh"] = total * slot_len * 1000
     return level_power_df
 
 
@@ -667,8 +667,8 @@ chart_power = (
 )
 st.altair_chart(chart_power, use_container_width=True)
 slot_hours = slot_len
-weekday_power_base["Energy_KWh"] = weekday_power_base["Agg_kW"] * slot_hours
-weekend_power_base["Energy_KWh"] = weekend_power_base["Agg_kW"] * slot_hours
+weekday_power_base["Energy_Wh"] = weekday_power_base["Agg_kW"] * slot_hours * 1000
+weekend_power_base["Energy_Wh"] = weekend_power_base["Agg_kW"] * slot_hours * 1000
 
 with st.expander("Calendar", expanded=False):
     year = st.number_input("Year", min_value=2000, max_value=2100,
@@ -690,7 +690,7 @@ week_days = [d.strftime("%a") for d in week_df["Date"]]
 week_frames = []
 for i, (_, row) in enumerate(week_df.iterrows()):
     src = weekend_power_base if row["Type"] == "Weekend" else weekday_power_base
-    df_day = src[["Energy_KWh"]].copy()
+    df_day = src[["Energy_Wh"]].copy()
     df_day["Hour"] = np.arange(len(src)) * slot_hours + i * 24
     df_day["Day"] = row["Date"].strftime("%a")
     week_frames.append(df_day)
@@ -711,8 +711,8 @@ weekly_chart = (
             ),
         ),
         y=alt.Y(
-            "Energy_KWh",
-            title="Energy (kWh)",
+            "Energy_Wh",
+            title="Energy (Wh)",
             axis=alt.Axis(format="~s"),
         ),
         color="Day",
