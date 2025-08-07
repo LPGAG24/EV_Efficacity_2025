@@ -17,6 +17,19 @@ from data_prep_canada   import fetch_statcan_fleet, download_ckan_resource
 from util.calendar      import build_calendar
 
 
+def _format_si(value: float, unit: str = "") -> str:
+    """Return value scaled with k/M/G/T prefixes."""
+    abs_val = abs(value)
+    for factor, suffix in ((1e12, "T"), (1e9, "G"), (1e6, "M"), (1e3, "k")):
+        if abs_val >= factor:
+            return f"{value / factor:.2f} {suffix}{unit}".strip()
+    if abs_val >= 100:
+        return f"{value:.0f} {unit}".strip()
+    if abs_val >= 10:
+        return f"{value:.1f} {unit}".strip()
+    return f"{value:.2f} {unit}".strip()
+
+
 def _get_shares(prefix: str, visible: bool = True) -> tuple[float, float, float]:
     """Return home, work and custom charging shares for the given prefix."""
     key_home = f"home_share_{prefix.lower()}"
@@ -473,7 +486,7 @@ try:
     )
     st.altair_chart(gauss_chart, use_container_width=True)
     mean_time = (gauss_df["Time"] * gauss_df["Density"]).sum() / gauss_df["Density"].sum()
-    st.caption(f"Mean daily time: {mean_time:.1f} min")
+    st.caption(f"Mean daily time: {_format_si(mean_time, 'min')}")
 except Exception:
     pass
 
@@ -634,7 +647,7 @@ chart_cars = (
 )
 st.altair_chart(chart_cars, use_container_width=True)
 mean_cars = cars_df["Total_cars"].mean()
-st.caption(f"Mean cars charging: {mean_cars:.0f}")
+st.caption(f"Mean cars charging: {_format_si(mean_cars)}")
 
 level_vars = [c for c in level_power_df.columns if c.startswith("Level ")]
 power_long = level_power_df.melt(
@@ -668,8 +681,8 @@ max_point = (
     .encode(x="Time", y="Agg_kW")
 )
 
-daily_energy = (level_power_df["Agg_kW"] * slot_len).sum()
-max_power = level_power_df.loc[max_idx, "Agg_kW"]
+daily_energy_wh = (level_power_df["Agg_kW"] * slot_len).sum() * 1000
+max_power_w = level_power_df.loc[max_idx, "Agg_kW"] * 1000
 max_time = level_power_df.loc[max_idx, "Time"]
 
 chart_power = (
@@ -681,7 +694,9 @@ chart_power = (
     height=350,
 )
 st.altair_chart(chart_power, use_container_width=True)
-st.caption(f"Daily energy: {daily_energy:.2f} kWh — Peak {max_power:.1f} kW at {max_time}")
+st.caption(
+    f"Daily energy: {_format_si(daily_energy_wh, 'Wh')} — Peak {_format_si(max_power_w, 'W')} at {max_time}"
+)
 slot_hours = slot_len
 weekday_power_base["Energy_Wh"] = weekday_power_base["Agg_kW"] * slot_hours * 1000
 weekend_power_base["Energy_Wh"] = weekend_power_base["Agg_kW"] * slot_hours * 1000
