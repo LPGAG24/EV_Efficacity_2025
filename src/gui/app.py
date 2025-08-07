@@ -486,9 +486,11 @@ try:
     )
     st.altair_chart(gauss_chart, use_container_width=True)
     mean_time = (gauss_df["Time"] * gauss_df["Density"]).sum() / gauss_df["Density"].sum()
-    st.caption(f"Mean daily time: {_format_si(mean_time, 'min')}")
+    st.caption(
+        f"Mean daily time: {_format_si(mean_time, 'min')} — Average distance driven: {_format_si(avg_distance, 'km/day')}"
+    )
 except Exception:
-    pass
+    st.caption(f"Average distance driven: {_format_si(avg_distance, 'km/day')}")
 
 # ─────── Custom charging profiles ───────────────────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("Charging profiles")
