@@ -17,27 +17,48 @@ from data_prep_canada   import fetch_statcan_fleet, download_ckan_resource
 from util.calendar      import build_calendar
 
 
+def _format_si(value: float, unit: str = "") -> str:
+    """Return value scaled with k/M/G/T prefixes."""
+    abs_val = abs(value)
+    for factor, suffix in ((1e12, "T"), (1e9, "G"), (1e6, "M"), (1e3, "k")):
+        if abs_val >= factor:
+            return f"{value / factor:.2f} {suffix}{unit}".strip()
+    if abs_val >= 100:
+        return f"{value:.0f} {unit}".strip()
+    if abs_val >= 10:
+        return f"{value:.1f} {unit}".strip()
+    return f"{value:.2f} {unit}".strip()
+
+
 def _get_shares(prefix: str, visible: bool = True) -> tuple[float, float, float]:
     """Return home, work and custom charging shares for the given prefix."""
     key_home = f"home_share_{prefix.lower()}"
-    key_work = f"work_share_{prefix.lower()}"
+    key_custom = f"custom_share_{prefix.lower()}"
     if visible:
-        h_val = st.sidebar.number_input(
+        h_val = st.number_input(
             f"Home charging % ({prefix})",
-            0, 100, st.session_state.get(key_home, 60), step=1, key=key_home,
+            0,
+            100,
+            st.session_state.get(key_home, 60),
+            step=1,
+            key=key_home,
         )
-        w_val = st.sidebar.number_input(
-            f"Work charging % ({prefix})",
-            0, 100, st.session_state.get(key_work, 30), step=1, key=key_work,
+        c_val = st.number_input(
+            f"Custom charging % ({prefix})",
+            0,
+            100,
+            st.session_state.get(key_custom, 10),
+            step=1,
+            key=key_custom,
         )
     else:
         h_val = st.session_state.get(key_home, 60)
-        w_val = st.session_state.get(key_work, 30)
-    total = h_val + w_val
+        c_val = st.session_state.get(key_custom, 10)
+    total = h_val + c_val
     scale = 100 / total if total > 100 else 1.0
     home_share = (h_val * scale) / 100
-    work_share = (w_val * scale) / 100
-    custom_share = 1.0 - home_share - work_share
+    custom_share = (c_val * scale) / 100
+    work_share = 1.0 - home_share - custom_share
     return home_share, work_share, custom_share
 
 
@@ -140,6 +161,54 @@ def _build_categories(prefix: str, visible: bool = True) -> list[dict]:
     return categories
 
 
+def _build_custom(prefix: str) -> list[dict]:
+    """Create custom charging categories with dynamic share editing."""
+    key_count = f"{prefix.lower()}_custom_count"
+    if key_count not in st.session_state:
+        st.session_state[key_count] = 1
+
+    plus, minus = st.columns(2)
+    if plus.button("+", key=f"{prefix}_plus"):
+        st.session_state[key_count] += 1
+    if minus.button("-", key=f"{prefix}_minus") and st.session_state[key_count] > 1:
+        st.session_state[key_count] -= 1
+
+    categories: list[dict] = []
+    shares: list[int] = []
+    count = st.session_state[key_count]
+    for i in range(count):
+        name = st.text_input(
+            f"Name {i+1}", value=f"Profile {i+1}", key=f"{prefix}_name_{i}"
+        )
+        share = st.number_input(
+            f"{name} %", 0, 100, 100 // count, key=f"{prefix}_share_{i}"
+        )
+        prof = arrival_profile_editor(
+            f"{name} arrival distribution ({prefix})",
+            n_slots=n_res,
+            mu0=12.0,
+            sigma0=2.0,
+            ratio0=(100.0, 0.0, 0.0),
+            key=f"{prefix}_custom_{i}",
+        )
+        categories.append(
+            {
+                "share": share / 100,
+                "profile": prof["profile"],
+                "speed": prof["kW"],
+                "label": name,
+                "level_kW": prof["kW_levels"],
+                "ratios": prof["ratios"],
+            }
+        )
+        shares.append(share)
+
+    if sum(shares) > 100:
+        st.warning("Total share exceeds 100%")
+
+    return categories
+
+
 def _compute_energy(categories: list[dict]) -> pd.DataFrame:
     """Return total power dataframe for given categories."""
     time_bins, n_slots, slot_len = compute_time_bins(n_res, recharge_time)
@@ -192,8 +261,6 @@ slot_minutes = st.session_state.slot_minutes
 n_res        = st.session_state.n_res    # ← voilà « n_res » pour la suite
 
 # store number of custom profiles for dynamic editing
-if "custom_profile_count" not in st.session_state:
-    st.session_state.custom_profile_count = 1
 
 st.sidebar.markdown(f"**Sélection actuelle** : {n_res} créneaux × {slot_minutes} min = 1 440 min")
 
@@ -240,53 +307,7 @@ def load_car_usage() -> CarUsage:
 electric_eff = CarEfficiency(load_electric_efficiency())
 # hybrid_eff   = CarEfficiency(load_hybrid_efficiency())
 
-
-# ── Vehicle selection ─────────────────────────────────────────────────────────
-# Selection uses fleet distribution table; no sidebar multiselect
-
 recharge_time = 8.0
-show_vehicle_picker = st.sidebar.checkbox("Select vehicle")
-if show_vehicle_picker:
-    makes = sorted(electric_eff.data["Make"].unique())
-    selected_make = st.sidebar.selectbox("Make", makes)
-    models = sorted(
-        electric_eff.data[electric_eff.data["Make"] == selected_make]["Model"].unique()
-    )
-    selected_model = st.sidebar.selectbox("Model", models, default=None)
-
-    model_row = electric_eff[{"Make": selected_make, "Model": selected_model}]
-    if not model_row.empty:
-        eff = float(model_row["Combined (kWh/100 km)"].iloc[0])
-        recharge_time = float(model_row["Recharge time (h)"].iloc[0])
-        selected_class = model_row["Vehicle class"].iloc[0]
-    else:
-        eff = 18.0
-        recharge_time = 8.0
-        selected_class = None
-    
-    st.sidebar.write(f"🔋 {eff:.1f} kWh/100 km")
-    if selected_class:
-        st.sidebar.write(f"🚗 Class : {selected_class}")
-    st.sidebar.write(f"⏱ {recharge_time} h recharge")
-else:
-    #use mean of current vehicle class selected
-    if selected_types:
-        eff = electric_eff.efficiency_by_vehicle_type[
-            electric_eff.efficiency_by_vehicle_type["Vehicle class"].isin(selected_types)
-        ]
-    else:
-        eff = electric_eff.efficiency_by_vehicle_type
-    if selected_types:
-        recharge_time = pd.to_numeric(
-            electric_eff.data[electric_eff.data["Vehicle class"].isin(selected_types)][
-                "Recharge time (h)"
-            ],
-            errors="coerce",
-        ).mean()
-    else:
-        recharge_time = pd.to_numeric(
-            electric_eff.data["Recharge time (h)"], errors="coerce"
-        ).mean()
 
 # ── Layout ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 st.title(f"🚗 EV & Hybrid Dashboard — {province}")
@@ -296,6 +317,26 @@ selected_eff = electric_eff
 
 with st.container():
     st.header("1 · Fleet distribution")
+    vehicle_rows = electric_eff.data[["Make", "Model"]].drop_duplicates()
+    vehicle_opts = [("", "")] + list(vehicle_rows.itertuples(index=False, name=None))
+    selected_vehicle = st.selectbox(
+        "Select vehicle",
+        vehicle_opts,
+        format_func=lambda x: "Select vehicle" if x[0] == "" else f"{x[0]} {x[1]}",
+    )
+    if selected_vehicle[0]:
+        model_row = electric_eff[{"Make": selected_vehicle[0], "Model": selected_vehicle[1]}]
+        if not model_row.empty:
+            recharge_time = float(model_row["Recharge time (h)"].iloc[0])
+            eff = float(model_row["Combined (kWh/100 km)"].iloc[0])
+            selected_class = model_row["Vehicle class"].iloc[0]
+            st.caption(
+                f"{selected_class} — 🔋 {eff:.1f} kWh/100 km, ⏱ {recharge_time} h recharge"
+            )
+    else:
+        recharge_time = pd.to_numeric(
+            electric_eff.data["Recharge time (h)"], errors="coerce"
+        ).mean()
     st.subheader("Vehicle fleet")
     # list of all vehicles with an editable "Percent" column and battery size
     vehicles_df = (
@@ -402,26 +443,28 @@ with st.container():
 
     with col2:
         st.header("2 · Efficiency (kWh/100 km) and Battery size")
-        tab1, tab2 = st.tabs(["⚡ Chart", "DataFrame"])
         selected_eff.set_efficiency_by_type(selected_types)
         selected_eff.set_battery_by_type(selected_types)
         df_e = selected_eff.efficiency_by_vehicle_type
-        df_b = selected_eff.battery_by_vehicle_type
+        df_b = selected_eff.battery_by_vehicle_type.copy()
+        st.subheader("Battery size (kWh)")
+        battery_inputs = {}
+        for idx, row in df_b.iterrows():
+            key = f"bat_{row['Vehicle class']}"
+            val = st.number_input(
+                row["Vehicle class"], value=float(row["Battery_kWh"]), step=1.0, key=key
+            )
+            df_b.at[idx, "Battery_kWh"] = val
+            battery_inputs[row["Vehicle class"]] = val
         df_merge = df_e.merge(df_b, on="Vehicle class")
         chart_df = (
             df_merge[["Vehicle class", "Combined (Le/100 km)", "Battery_kWh"]]
-                .set_index("Vehicle class")          # x-axis
-                .sort_index()                        # optional: alphabetic order
+            .set_index("Vehicle class")
+            .sort_index()
         )
+        tab1, tab2 = st.tabs(["⚡ Chart", "DataFrame"])
         tab1.bar_chart(chart_df, use_container_width=True)
         tab2.dataframe(df_merge, use_container_width=True)
-
-        st.sidebar.subheader("Battery size (kWh)")
-        battery_inputs = {}
-        for _, row in df_b.iterrows():
-            battery_inputs[row["Vehicle class"]] = st.sidebar.number_input(
-                row["Vehicle class"], value=float(row["Battery_kWh"]), step=1.0
-            )
 
 # --- Sidebar: user selects day and vehicle class
 day_choices = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -446,10 +489,7 @@ car_count = st.sidebar.number_input(
 try:
     cu = load_car_usage()
     dist_per_day = cu[{"Province": province}]
-    if weekend_mode:
-        day_type = "Weekend"
-    else:
-        day_type = "Weekend" if selected_day in cu.weekends else "Weekday"
+    day_type = "Weekend" if selected_day in cu.weekends else "Weekday"
     avg_distance = dist_per_day[f"{day_type}_km"].values[0]
 except Exception:
     avg_distance = 30
@@ -469,63 +509,35 @@ try:
             y=alt.Y("Density"),
             color="Province",
         )
-        .properties(title="Private vehicle daily time distribution")
+        .properties(title="Daily driving time distribution")
     )
     st.altair_chart(gauss_chart, use_container_width=True)
+    mean_time = (gauss_df["Time"] * gauss_df["Density"]).sum() / gauss_df["Density"].sum()
+    st.caption(
+        f"Mean daily time: {_format_si(mean_time, 'min')} — Average distance driven: {_format_si(avg_distance, 'km/day')}"
+    )
 except Exception:
-    pass
+    st.caption(f"Average distance driven: {_format_si(avg_distance, 'km/day')}")
 
-# ─────── Custom charging profiles ───────────────────────────────────────────────────────────────────────────────────────────
-st.sidebar.header("Charging profiles")
-weekend_mode = st.sidebar.checkbox("Edit weekend profile", value=False, key="weekend_mode")
-profile_mode = st.sidebar.radio(
-    "Mode", ["Normal", "Custom"], horizontal=True, key="profile_mode"
-)
+# ─────── Custom charging profiles ─────────────────────────────────────────────
+st.header("Charging profiles")
+weekday_tab, weekend_tab = st.tabs(["Weekday", "Weekend"])
 
-if profile_mode == "Normal":
-    categories_weekday = _build_categories("Weekday", not weekend_mode)
-    categories_weekend = _build_categories("Weekend", weekend_mode)
-    categories = categories_weekend if weekend_mode else categories_weekday
-else:
-    plus, minus = st.sidebar.columns(2)
-    if plus.button("+"):
-        st.session_state.custom_profile_count += 1
-    if minus.button("-") and st.session_state.custom_profile_count > 1:
-        st.session_state.custom_profile_count -= 1
+with weekday_tab:
+    mode_wd = st.radio("Mode", ["Normal", "Custom"], horizontal=True, key="weekday_mode")
+    if mode_wd == "Normal":
+        categories_weekday = _build_categories("Weekday", True)
+    else:
+        categories_weekday = _build_custom("Weekday")
 
-    categories = []
-    shares = []
-    for i in range(st.session_state.custom_profile_count):
-        name = st.sidebar.text_input(
-            f"Name {i+1}", value=f"Profile {i+1}", key=f"name_{i}"
-        )
-        share = st.sidebar.number_input(
-            f"{name} %", 0, 100, 100 // st.session_state.custom_profile_count,
-            key=f"share_{i}"
-        )
-        prof = arrival_profile_editor(
-            f"{name} arrival distribution",
-            n_slots=n_res,  mu0=12.0,
-            sigma0=2.0, ratio0=(100.0, 0.0, 0.0),
-            key=f"custom_{i}",
-        )
-        categories.append(
-            {
-                "share": share / 100,
-                "profile": prof["profile"],
-                "speed": prof["kW"],
-                "label": name,
-                "level_kW": prof["kW_levels"],
-                "ratios": prof["ratios"],
-            }
-        )
-        shares.append(share)
+with weekend_tab:
+    mode_we = st.radio("Mode", ["Normal", "Custom"], horizontal=True, key="weekend_mode_tab")
+    if mode_we == "Normal":
+        categories_weekend = _build_categories("Weekend", True)
+    else:
+        categories_weekend = _build_custom("Weekend")
 
-    if sum(shares) > 100:
-        st.sidebar.warning("Total share exceeds 100%")
-
-    categories_weekday = categories
-    categories_weekend = categories
+categories = categories_weekend if selected_day in ["Saturday", "Sunday"] else categories_weekday
 
 # compute base power profiles for both day types
 weekday_power_base = _compute_energy(categories_weekday)
@@ -631,6 +643,8 @@ chart_cars = (
     height=350,
 )
 st.altair_chart(chart_cars, use_container_width=True)
+mean_cars = cars_df["Total_cars"].mean()
+st.caption(f"Mean cars charging: {_format_si(mean_cars)}")
 
 level_vars = [c for c in level_power_df.columns if c.startswith("Level ")]
 power_long = level_power_df.melt(
@@ -657,8 +671,19 @@ area_total_power = (
     )
 )
 
+max_idx = level_power_df["Agg_kW"].idxmax()
+max_point = (
+    alt.Chart(level_power_df.iloc[[max_idx]])
+    .mark_point(color="red", size=100)
+    .encode(x="Time", y="Agg_kW")
+)
+
+daily_energy_wh = (level_power_df["Agg_kW"] * slot_len).sum() * 1000
+max_power_w = level_power_df.loc[max_idx, "Agg_kW"] * 1000
+max_time = level_power_df.loc[max_idx, "Time"]
+
 chart_power = (
-    line_levels + area_total_power
+    line_levels + area_total_power + max_point
 ).properties(
     title=f"Power demand over time ({', '.join(province)}, "
     f"{selected_types if selected_types is not None else 'Average'} vehicle)",
@@ -666,6 +691,9 @@ chart_power = (
     height=350,
 )
 st.altair_chart(chart_power, use_container_width=True)
+st.caption(
+    f"Daily energy: {_format_si(daily_energy_wh, 'Wh')} — Peak {_format_si(max_power_w, 'W')} at {max_time}"
+)
 slot_hours = slot_len
 weekday_power_base["Energy_Wh"] = weekday_power_base["Agg_kW"] * slot_hours * 1000
 weekend_power_base["Energy_Wh"] = weekend_power_base["Agg_kW"] * slot_hours * 1000
