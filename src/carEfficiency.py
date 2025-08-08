@@ -40,50 +40,32 @@ class CarEfficiency:
 
     def set_efficiency_by_type(self, selected_types: list[str] | None = None) -> None:
         """
-        Calcule la consommation moyenne combinée (Le/100 km) par type de véhicule.
-
-        Étapes :
-        1. Normalise la colonne "Vehicle class" en ne gardant que le texte avant le caractère ":".
-        2. Repère dynamiquement la colonne contenant à la fois "Combined" et "Le".
-        3. Extrait la partie numérique (valeur avant l’espace) de cette colonne et la convertit en float.
-        4. [Optionnel] Si `selected_types` est fourni, garde seulement ces classes.
-        5. Regroupe par "Vehicle class" et calcule la moyenne.
-        6. Stocke le résultat dans `self.efficiency_by_vehicle_type`
-        (colonnes : "Vehicle class", <combined_column>).
-
-        Args:
-            selected_types (list[str] | None): sous-ensemble de classes à conserver
-                (ex. ["Compact", "SUV"]). Laisser `None` pour tout calculer.
-
-        Returns:
-            None
+        Compute average combined consumption (prefer kWh/100 km if available).
         """
         df = self.data.copy()
-
-        # 1) Nettoie la classe
         df["Vehicle class"] = df["Vehicle class"].str.split(":", n=1).str[0]
-
-        # 2) Colonne combinée (fonctionne même si le nom change : "Combined … Le…")
-        mask = df.columns.str.contains("Combined") & df.columns.str.contains("Le")
+    
+        # Prefer electric energy column if present
+        if any(df.columns.str.contains("Combined") & df.columns.str.contains("kWh")):
+            mask = df.columns.str.contains("Combined") & df.columns.str.contains("kWh")
+        else:
+            mask = df.columns.str.contains("Combined") & df.columns.str.contains("Le")
+    
         combined_col = df.columns[mask][0]
-
-        # 3) Conversion texte → float
-        df[combined_col] = df[combined_col].str.split(" ").str[0].astype(float)
-
-        # 4) Filtre éventuel
+        df[combined_col] = pd.to_numeric(df[combined_col].astype(str).str.split(" ").str[0],
+                                         errors="coerce")
+    
         if selected_types:
             df = df[df["Vehicle class"].isin(selected_types)]
-
-        # 5) Moyenne par classe
+    
         means = (
             df.groupby("Vehicle class", sort=False)[combined_col]
-            .mean()
-            .reset_index()
+              .mean()
+              .reset_index()
         )
-
-        # 6) Stockage
         self.efficiency_by_vehicle_type = means
-
+    
+    
     def set_battery_by_type(self, selected_types: list[str] | None = None) -> None:
         """Compute mean battery capacity (kWh) by vehicle class."""
         df = self.data.copy()
