@@ -521,18 +521,17 @@ except Exception:
 
 # ─────── Custom charging profiles ─────────────────────────────────────────────
 st.header("Charging profiles")
+mode = st.radio("Mode", ["Normal", "Custom"], horizontal=True, key="charge_mode")
 weekday_tab, weekend_tab = st.tabs(["Weekday", "Weekend"])
 
 with weekday_tab:
-    mode_wd = st.radio("Mode", ["Normal", "Custom"], horizontal=True, key="weekday_mode")
-    if mode_wd == "Normal":
+    if mode == "Normal":
         categories_weekday = _build_categories("Weekday", True)
     else:
         categories_weekday = _build_custom("Weekday")
 
 with weekend_tab:
-    mode_we = st.radio("Mode", ["Normal", "Custom"], horizontal=True, key="weekend_mode_tab")
-    if mode_we == "Normal":
+    if mode == "Normal":
         categories_weekend = _build_categories("Weekend", True)
     else:
         categories_weekend = _build_custom("Weekend")
