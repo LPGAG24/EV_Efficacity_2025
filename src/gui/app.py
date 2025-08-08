@@ -4,6 +4,7 @@ import pandas       as pd
 import numpy        as np
 import altair       as alt
 import urllib.request, json, folium
+import matplotlib.pyplot as plt
 
 from streamlit_folium   import st_folium
 
@@ -693,6 +694,21 @@ st.altair_chart(chart_power, use_container_width=True)
 st.caption(
     f"Daily energy: {_format_si(daily_energy_wh, 'Wh')} — Peak {_format_si(max_power_w, 'W')} at {max_time}"
 )
+
+# Matplotlib representation of power demand
+fig, ax = plt.subplots()
+ax.plot(level_power_df["Time"], level_power_df["Agg_kW"], label="Total power")
+ax.scatter(
+    level_power_df.loc[max_idx, "Time"],
+    level_power_df.loc[max_idx, "Agg_kW"],
+    color="red",
+    zorder=3,
+    label="Peak",
+)
+ax.set_xlabel("Time")
+ax.set_ylabel("Power (kW)")
+ax.legend()
+st.pyplot(fig)
 slot_hours = slot_len
 weekday_power_base["Energy_Wh"] = weekday_power_base["Agg_kW"] * slot_hours * 1000
 weekend_power_base["Energy_Wh"] = weekend_power_base["Agg_kW"] * slot_hours * 1000
