@@ -4,6 +4,7 @@ import pandas       as pd
 import numpy        as np
 import altair       as alt
 import urllib.request, json, folium
+import calendar
 
 from streamlit_folium   import st_folium
 
@@ -307,6 +308,15 @@ def load_car_usage() -> CarUsage:
 electric_eff = CarEfficiency(load_electric_efficiency())
 # hybrid_eff   = CarEfficiency(load_hybrid_efficiency())
 
+with st.sidebar:
+    st.header("Monthly efficiency ratios")
+    month_coeffs: dict[int, float] = {}
+    for i, name in enumerate(calendar.month_name[1:], start=1):
+        month_coeffs[i] = st.number_input(
+            name, value=1.0, step=0.1, key=f"eff_ratio_{i}"
+        )
+electric_eff.set_month_coeffs(month_coeffs)
+
 recharge_time = 8.0
 
 # ── Layout ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -404,7 +414,7 @@ with st.container():
         replicated = merged.loc[
             merged.index.repeat((weights * 100).round().astype(int))
         ].reset_index(drop=True)
-        selected_eff = CarEfficiency(replicated)
+        selected_eff = CarEfficiency(replicated, month_coeffs=month_coeffs)
     else:
         selected_eff = electric_eff
 
