@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import re
 import math
+from tomlkit import key
 import util.normalizer as util
 try:
     import streamlit as st  # optional dependency
@@ -198,7 +199,10 @@ class CarUsage:
         if isinstance(key, dict):
             mask = pd.Series(True, index=df.index)
             for col, val in key.items():
-                mask &= df[col] == val
+                if isinstance(val, (list, set, tuple, pd.Series, pd.Index, np.ndarray)):
+                    mask &= df[col].isin(val)
+                else:
+                    mask &= df[col] == val
             return df[mask]
 
         # 5. callable

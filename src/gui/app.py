@@ -488,9 +488,9 @@ car_count = st.sidebar.number_input(
 # Get avg distance driven per day for that province (use CarUsage or fallback)
 try:
     cu = load_car_usage()
-    dist_per_day = cu[{"Province": province}]
+    dist_per_day = cu[{"Province": province}]  # maintenant OK si list
     day_type = "Weekend" if selected_day in cu.weekends else "Weekday"
-    avg_distance = dist_per_day[f"{day_type}_km"].values[0]
+    avg_distance = dist_per_day[f"{day_type}_km"].mean() 
 except Exception:
     avg_distance = 30
 
