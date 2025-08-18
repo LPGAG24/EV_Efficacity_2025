@@ -21,10 +21,9 @@ Usage:
 
 
 class CarEfficiency:
-    _SNOW_COEFF = 2  # Coefficient for snow conditions (2x consumption)
-
-
-    def __init__(self, data: pd.DataFrame):
+    def __init__(
+        self, data: pd.DataFrame, month_coeffs: dict[int, float] | None = None
+    ):
         """vehicle_class: ['Subcompact', 'Mid-size', 'Compact', 'Two-seater', 'Full-size',\n
        'Station wagon', 'Sport utility vehicle', 'Pickup truck',\n
        'Minicompact', 'Minivan']"""
@@ -36,6 +35,10 @@ class CarEfficiency:
         self.efficiency_percent_by_vehicle_type: dict[str, float] = {}
         self.set_efficiency_by_type()
         self.set_battery_by_type()
+
+        self.month_coeffs: dict[int, float] = {m: 1.0 for m in range(1, 13)}
+        if month_coeffs:
+            self.set_month_coeffs(month_coeffs)
  
 
     def set_efficiency_by_type(self, selected_types: list[str] | None = None) -> None:
@@ -104,56 +107,78 @@ class CarEfficiency:
         df = self.battery_by_vehicle_type
         return df[df["Vehicle class"] == category] if category else df
 
-    def get_efficiency_by_type(self, category: str = None) -> pd.DataFrame:
+    def set_month_coeffs(self, coeffs: dict[int, float]) -> None:
+        """Update per-month efficiency multipliers.
+
+        Parameters
+        ----------
+        coeffs : dict[int, float]
+            Mapping of month number (1–12) to multiplier.
+        """
+        for m, c in coeffs.items():
+            if 1 <= m <= 12:
+                self.month_coeffs[m] = float(c)
+
+    def get_efficiency_by_type(
+        self, category: str | None = None, month: int | None = None
+    ) -> pd.DataFrame:
         """Return average combined consumption, optionally for one vehicle class.
 
-        If `category` is provided, filters the `efficiency_by_vehicle_type`
+        If ``category`` is provided, filters the ``efficiency_by_vehicle_type``
         DataFrame to only that Vehicle class; otherwise returns the full table.
+        When ``month`` is supplied, consumption values are multiplied by the
+        corresponding entry in :attr:`month_coeffs`.
 
-        Args:
-            category (str, optional):  
-                Name of the Vehicle class to filter by (e.g. "Compact", 
-                "Sport utility vehicle"). If None (default), returns all classes.
+        Parameters
+        ----------
+        category : str | None, optional
+            Vehicle class to filter by. If ``None`` (default), all classes are
+            returned.
+        month : int | None, optional
+            Month index (1–12) whose efficiency multiplier should be applied.
 
-        Returns:
-            pd.DataFrame:  
-                - If `category` is given: one-row DataFrame for that class.  
-                - If `category` is None: full DataFrame with columns  
-                  ["Vehicle class", "<combined-consumption column>"] and  
-                  dtype float for the consumption values.
+        Returns
+        -------
+        pd.DataFrame
+            Filtered efficiency table with adjusted consumption values.
 
-        Example:
-            >>> # assume cd.efficiency_by_vehicle_type was set earlier
-            >>> cd.get_efficiency_by_type("Compact")
-              Vehicle class  Combined (Le/100 km)
-            0       Compact                   5.50
-
-            >>> # get the full table
-            >>> cd.get_efficiency_by_type()
-              Vehicle class  Combined (Le/100 km)
-            0       Compact                   5.50
-            1     Subcompact                  4.80
-            2        Mid-size                 6.20
-            ... 
+        Example
+        -------
+        >>> ce.get_efficiency_by_type("Compact", month=2)
+          Vehicle class  Combined (Le/100 km)
+        0       Compact                   5.50
         """
         df = self.efficiency_by_vehicle_type
-        return df[df["Vehicle class"] == category] if category is not None else df
+        df = df[df["Vehicle class"] == category] if category is not None else df
+        if month is not None:
+            cons_col = df.columns[1]
+            df = df.copy()
+            df[cons_col] *= self.month_coeffs.get(month, 1.0)
+        return df
 
-    def get_mean_efficiency(self, category: str | list[str] | None = None) -> float | pd.Series:
-        """Must be able to return efficiency as a float or pandas Series. like
+    def get_mean_efficiency(
+        self, category: str | list[str] | None = None, month: int | None = None
+    ) -> float | pd.Series:
+        """Return mean efficiency, optionally applying a monthly multiplier.
 
-        >>> car_efficiency = CarEfficiency(data)
-        >>> car_efficiency.get_mean_efficiency()
-        Returns the mean efficiency of all vehicles in the dataset.
-        
-        >>> car_efficiency = CarEfficiency(data)
-        >>> car_efficiency.get_mean_efficiency(["Compact", "Subcompact"])
-        Returns the mean efficiency of specified vehicle classes. -> [0.56, 0.48]
-
+        Parameters
+        ----------
+        category : str | list[str] | None
+            Optional subset of vehicle classes. If ``None`` (default), the mean
+            across all classes is returned. Passing a single string is treated
+            as ``None`` for backward compatibility.
+        month : int | None, optional
+            Month index (1–12) whose efficiency multiplier should be applied
+            before computing the mean.
         """
         category = None if isinstance(category, str) else category
-        df = self.efficiency_by_vehicle_type
-        return df[df["Vehicle class"].isin(category)].mean() if category else df.mean()
+        df = self.get_efficiency_by_type(month=month)
+        cons_col = df.columns[1]
+        if category:
+            subset = df[df["Vehicle class"].isin(category)][cons_col]
+        else:
+            subset = df[cons_col]
+        return float(subset.mean())
 
     def __call__(self) -> pd.DataFrame:
         return self.data
