@@ -16,6 +16,7 @@ from traitlets import default
 from appHelper          import *
 from data_prep_canada   import fetch_statcan_fleet, download_ckan_resource
 from util.calendar      import build_calendar
+from demand             import compute_charging_demand
 
 
 def _format_si(value: float, unit: str = "") -> str:
@@ -553,67 +554,17 @@ weekday_power_base = _compute_energy(categories_weekday)
 weekend_power_base = _compute_energy(categories_weekend)
 
 # --- Compute charging cars and electric demand ------------------------------
-time_bins, n_slots, slot_len = compute_time_bins(n_res, recharge_time)
+demand = compute_charging_demand(categories, car_count, n_res, recharge_time)
 
-cars_df = pd.DataFrame({"Time": time_bins})
-power_df = pd.DataFrame({"Time": time_bins})
-level_power_df = pd.DataFrame({"Time": time_bins})
-
-# accumulate arrival profiles and charging kernels for total demand
-arrivals_list: list[np.ndarray] = []
-kernels_list: list[np.ndarray] = []
-
-# store arrivals and kernels for each charger level
-level_arrivals: dict[str, list[np.ndarray]] = {}
-level_kernels: dict[str, list[np.ndarray]] = {}
-
-for cat in categories:
-    arrivals = cat["share"] * car_count * cat["profile"]
-
-    # cars charging simultaneously for this category
-    cars = circular_convolve(arrivals, np.ones(n_slots))
-    cars_df[cat["label"]] = cars
-
-    # instantaneous power for this category
-    power_df[cat["label"]] = circular_convolve(
-        arrivals, np.full(n_slots, cat["speed"])
-    )
-
-    # record arrivals and kernels for total demand
-    arrivals_list.append(arrivals)
-    kernels_list.append(np.full(n_slots, cat["speed"]))
-
-    # accumulate arrivals per charger level
-    ratios = cat.get("ratios", (1.0, 0.0, 0.0))
-    for i, kw in enumerate(cat["level_kW"]):
-        level = f"Level {i+1}"
-        level_arrivals.setdefault(level, []).append(arrivals * ratios[i])
-        level_kernels.setdefault(level, []).append(np.full(n_slots, kw))
-
-cars_df["Total_cars"] = cars_df[[c["label"] for c in categories]].sum(axis=1)
-power_df["Total_kW"] = power_df[[c["label"] for c in categories]].sum(axis=1)
-
-# total aggregated power across all categories
-arrivals_mat = np.column_stack(arrivals_list)
-kernels = np.column_stack(kernels_list)
-total_power = aggregate_power(arrivals_mat, kernels)
-
-# compute power demand by charger level
-for level, arr_list in level_arrivals.items():
-    arr_mat = np.column_stack(arr_list)
-    kern_mat = np.column_stack(level_kernels[level])
-    level_power_df[level] = aggregate_power(arr_mat, kern_mat)
-
-level_cols = [c for c in level_power_df.columns if c.startswith("Level ")]
-level_power_df["Agg_kW"] = level_power_df[level_cols].sum(axis=1)
-level_power_df["Agg_kW"] = total_power
-
-categ_vars = [c["label"] for c in categories]
-cars_long = cars_df.melt(
-    id_vars="Time", value_vars=categ_vars, var_name="Source", value_name="Cars"
-)
-cars_long["Cars_thousands"] = cars_long["Cars"] / 1000
-cars_df["Total_thousands"] = cars_df["Total_cars"] / 1000
+cars_df = demand["cars_df"]
+cars_long = demand["cars_long"]
+level_power_df = demand["level_power_df"]
+power_long = demand["power_long"]
+slot_len = demand["slot_len"]
+mean_cars = demand["mean_cars"]
+daily_energy_wh = demand["daily_energy_wh"]
+max_power_w = demand["max_power_w"]
+max_time = demand["max_time"]
 
 line_cars = (
     alt.Chart(cars_long)
@@ -652,13 +603,7 @@ chart_cars = (
     height=350,
 )
 st.altair_chart(chart_cars, use_container_width=True)
-mean_cars = cars_df["Total_cars"].mean()
 st.caption(f"Mean cars charging: {_format_si(mean_cars)}")
-
-level_vars = [c for c in level_power_df.columns if c.startswith("Level ")]
-power_long = level_power_df.melt(
-    id_vars="Time", value_vars=level_vars, var_name="Charger Level", value_name="kW"
-)
 
 line_levels = alt.Chart(power_long).mark_line().encode(
     x=alt.X("Time", sort=None),
@@ -680,16 +625,11 @@ area_total_power = (
     )
 )
 
-max_idx = level_power_df["Agg_kW"].idxmax()
 max_point = (
-    alt.Chart(level_power_df.iloc[[max_idx]])
+    alt.Chart(level_power_df[level_power_df["Time"] == max_time])
     .mark_point(color="red", size=100)
     .encode(x="Time", y="Agg_kW")
 )
-
-daily_energy_wh = (level_power_df["Agg_kW"] * slot_len).sum() * 1000
-max_power_w = level_power_df.loc[max_idx, "Agg_kW"] * 1000
-max_time = level_power_df.loc[max_idx, "Time"]
 
 chart_power = (
     line_levels + area_total_power + max_point
