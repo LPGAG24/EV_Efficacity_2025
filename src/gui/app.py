@@ -5,7 +5,6 @@ import numpy        as np
 import altair       as alt
 import urllib.request, json, folium
 import calendar
-
 from streamlit_folium   import st_folium
 
 from carDistribution    import *
@@ -309,13 +308,11 @@ def load_car_usage() -> CarUsage:
 electric_eff = CarEfficiency(load_electric_efficiency())
 # hybrid_eff   = CarEfficiency(load_hybrid_efficiency())
 
-with st.sidebar:
-    st.header("Monthly efficiency ratios")
-    month_coeffs: dict[int, float] = {}
-    for i, name in enumerate(calendar.month_name[1:], start=1):
-        month_coeffs[i] = st.number_input(
-            name, value=1.0, step=0.1, key=f"eff_ratio_{i}"
-        )
+# Initialize seasonal efficiency adjustments using per‑month ratios stored in
+# session state. These values can be edited later below the calendar.
+month_coeffs = {
+    i: st.session_state.get(f"eff_ratio_{i}", 1.0) for i in range(1, 13)
+}
 electric_eff.set_month_coeffs(month_coeffs)
 
 recharge_time = 8.0
@@ -661,6 +658,19 @@ with st.expander("Calendar", expanded=False):
         value=int(default_week),
         step=1,)
     st.dataframe(cal_df, use_container_width=True)
+
+st.subheader("Monthly efficiency ratios")
+cols = st.columns(3)
+month_coeffs = {}
+for i, name in enumerate(calendar.month_name[1:], start=1):
+    col = cols[(i - 1) % 3]
+    month_coeffs[i] = col.number_input(
+        name,
+        value=st.session_state.get(f"eff_ratio_{i}", 1.0),
+        step=0.1,
+        key=f"eff_ratio_{i}",
+    )
+electric_eff.set_month_coeffs(month_coeffs)
 
 week_df = cal_df[cal_df["Date"].apply(lambda d: d.isocalendar()[1]) == week]
 week_days = [d.strftime("%a") for d in week_df["Date"]]
